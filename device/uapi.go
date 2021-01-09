@@ -171,7 +171,7 @@ func (device *Device) IpcSetOperation(socket *bufio.Reader) error {
 					return &IPCError{ipc.IpcErrorPortInUse}
 				}
 
-			case "fwmark":
+				/* case "fwmark":
 
 				// parse fwmark field
 
@@ -193,7 +193,7 @@ func (device *Device) IpcSetOperation(socket *bufio.Reader) error {
 				if err := device.BindSetMark(uint32(fwmark)); err != nil {
 					logError.Println("Failed to update fwmark:", err)
 					return &IPCError{ipc.IpcErrorPortInUse}
-				}
+				} */
 
 			case "public_key":
 				// switch to peer configuration

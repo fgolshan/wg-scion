@@ -496,13 +496,13 @@ func (device *Device) BindUpdate() error {
 			netc.port = 0
 			return err
 		}
-		netc.netlinkCancel, err = device.startRouteListener(netc.bind)
-		if err != nil {
+		// netc.netlinkCancel, err = device.startRouteListener(netc.bind)
+		/* if err != nil {
 			netc.bind.Close()
 			netc.bind = nil
 			netc.port = 0
 			return err
-		}
+		} */
 
 		// set fwmark
 
