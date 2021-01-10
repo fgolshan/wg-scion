@@ -435,29 +435,12 @@ func send4(sock int, end *NativeEndpoint, buff []byte) error {
 			Type:  unix.IP_PKTINFO,
 			Len:   unix.SizeofInet4Pktinfo + unix.SizeofCmsghdr,
 		},
-		unix.Inet4Pktinfo{
-			Spec_dst: end.src4().Src,
-			Ifindex:  end.src4().Ifindex,
-		},
+		unix.Inet4Pktinfo{},
 	}
 
 	end.Lock()
 	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
 	end.Unlock()
-
-	if err == nil {
-		return nil
-	}
-
-	// clear src and retry
-
-	if err == unix.EINVAL {
-		end.ClearSrc()
-		cmsg.pktinfo = unix.Inet4Pktinfo{}
-		end.Lock()
-		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst4(), 0)
-		end.Unlock()
-	}
 
 	return err
 }
@@ -475,33 +458,12 @@ func send6(sock int, end *NativeEndpoint, buff []byte) error {
 			Type:  unix.IPV6_PKTINFO,
 			Len:   unix.SizeofInet6Pktinfo + unix.SizeofCmsghdr,
 		},
-		unix.Inet6Pktinfo{
-			Addr:    end.src6().src,
-			Ifindex: end.dst6().ZoneId,
-		},
-	}
-
-	if cmsg.pktinfo.Addr == [16]byte{} {
-		cmsg.pktinfo.Ifindex = 0
+		unix.Inet6Pktinfo{},
 	}
 
 	end.Lock()
 	_, err := unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
 	end.Unlock()
-
-	if err == nil {
-		return nil
-	}
-
-	// clear src and retry
-
-	if err == unix.EINVAL {
-		end.ClearSrc()
-		cmsg.pktinfo = unix.Inet6Pktinfo{}
-		end.Lock()
-		_, err = unix.SendmsgN(sock, buff, (*[unsafe.Sizeof(cmsg)]byte)(unsafe.Pointer(&cmsg))[:], end.dst6(), 0)
-		end.Unlock()
-	}
 
 	return err
 }
@@ -527,14 +489,14 @@ func receive4(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 	}
 
 	// update source cache
-
-	if cmsg.cmsghdr.Level == unix.IPPROTO_IP &&
-		cmsg.cmsghdr.Type == unix.IP_PKTINFO &&
-		cmsg.cmsghdr.Len >= unix.SizeofInet4Pktinfo {
-		end.src4().Src = cmsg.pktinfo.Spec_dst
-		end.src4().Ifindex = cmsg.pktinfo.Ifindex
-	}
-
+	/*
+		if cmsg.cmsghdr.Level == unix.IPPROTO_IP &&
+			cmsg.cmsghdr.Type == unix.IP_PKTINFO &&
+			cmsg.cmsghdr.Len >= unix.SizeofInet4Pktinfo {
+			end.src4().Src = cmsg.pktinfo.Spec_dst
+			end.src4().Ifindex = cmsg.pktinfo.Ifindex
+		}
+	*/
 	return size, nil
 }
 
@@ -559,13 +521,13 @@ func receive6(sock int, buff []byte, end *NativeEndpoint) (int, error) {
 	}
 
 	// update source cache
-
-	if cmsg.cmsghdr.Level == unix.IPPROTO_IPV6 &&
-		cmsg.cmsghdr.Type == unix.IPV6_PKTINFO &&
-		cmsg.cmsghdr.Len >= unix.SizeofInet6Pktinfo {
-		end.src6().src = cmsg.pktinfo.Addr
-		end.dst6().ZoneId = cmsg.pktinfo.Ifindex
-	}
-
+	/*
+		if cmsg.cmsghdr.Level == unix.IPPROTO_IPV6 &&
+			cmsg.cmsghdr.Type == unix.IPV6_PKTINFO &&
+			cmsg.cmsghdr.Len >= unix.SizeofInet6Pktinfo {
+			end.src6().src = cmsg.pktinfo.Addr
+			end.dst6().ZoneId = cmsg.pktinfo.Ifindex
+		}
+	*/
 	return size, nil
 }
