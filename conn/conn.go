@@ -17,26 +17,12 @@ import (
 // A Bind interface may also be a PeekLookAtSocketFd or BindSocketToInterface,
 // depending on the platform-specific implementation.
 type Bind interface {
-	// LastMark reports the last mark set for this Bind.
-	LastMark() uint32
-
-	// SetMark sets the mark for each packet sent through this Bind.
-	// This mark is passed to the kernel as the socket option SO_MARK.
-	SetMark(mark uint32) error
-
-	// ReceiveIPv6 reads an IPv6 UDP packet into b.
+	// ReceiveIP reads an IP UDP packet into b.
 	//
 	// It reports the number of bytes read, n,
 	// the packet source address ep,
 	// and any error.
-	ReceiveIPv6(buff []byte) (n int, ep Endpoint, err error)
-
-	// ReceiveIPv4 reads an IPv4 UDP packet into b.
-	//
-	// It reports the number of bytes read, n,
-	// the packet source address ep,
-	// and any error.
-	ReceiveIPv4(b []byte) (n int, ep Endpoint, err error)
+	ReceiveIP(buff []byte) (n int, ep Endpoint, err error)
 
 	// Send writes a packet b to address ep.
 	Send(b []byte, ep Endpoint) error

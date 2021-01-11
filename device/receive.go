@@ -9,7 +9,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"net"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -102,15 +101,15 @@ func (peer *Peer) keepKeyFreshReceiving() {
  * Every time the bind is updated a new routine is started for
  * IPv4 and IPv6 (separately)
  */
-func (device *Device) RoutineReceiveIncoming(IP int, bind conn.Bind) {
+func (device *Device) RoutineReceiveIncoming(bind conn.Bind) {
 
 	logDebug := device.log.Debug
 	defer func() {
-		logDebug.Println("Routine: receive incoming IPv" + strconv.Itoa(IP) + " - stopped")
+		logDebug.Println("Routine: receive incoming IP" + " - stopped")
 		device.net.stopping.Done()
 	}()
 
-	logDebug.Println("Routine: receive incoming IPv" + strconv.Itoa(IP) + " - started")
+	logDebug.Println("Routine: receive incoming IP" + " - started")
 	device.net.starting.Done()
 
 	// receive datagrams until conn is closed
@@ -127,14 +126,7 @@ func (device *Device) RoutineReceiveIncoming(IP int, bind conn.Bind) {
 
 		// read next datagram
 
-		switch IP {
-		case ipv4.Version:
-			size, endpoint, err = bind.ReceiveIPv4(buffer[:])
-		case ipv6.Version:
-			size, endpoint, err = bind.ReceiveIPv6(buffer[:])
-		default:
-			panic("invalid IP version")
-		}
+		size, endpoint, err = bind.ReceiveIP(buffer[:])
 
 		if err != nil {
 			device.PutMessageBuffer(buffer)

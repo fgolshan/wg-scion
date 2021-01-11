@@ -11,8 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"golang.org/x/net/ipv4"
-	"golang.org/x/net/ipv6"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/ratelimiter"
 	"golang.zx2c4.com/wireguard/rwcancel"
@@ -436,41 +434,6 @@ func (device *Device) Bind() conn.Bind {
 	return device.net.bind
 }
 
-func (device *Device) BindSetMark(mark uint32) error {
-
-	device.net.Lock()
-	defer device.net.Unlock()
-
-	// check if modified
-
-	if device.net.fwmark == mark {
-		return nil
-	}
-
-	// update fwmark on existing bind
-
-	device.net.fwmark = mark
-	if device.isUp.Get() && device.net.bind != nil {
-		if err := device.net.bind.SetMark(mark); err != nil {
-			return err
-		}
-	}
-
-	// clear cached source addresses
-
-	device.peers.RLock()
-	for _, peer := range device.peers.keyMap {
-		peer.Lock()
-		defer peer.Unlock()
-		if peer.endpoint != nil {
-			peer.endpoint.ClearSrc()
-		}
-	}
-	device.peers.RUnlock()
-
-	return nil
-}
-
 func (device *Device) BindUpdate() error {
 
 	device.net.Lock()
@@ -496,22 +459,6 @@ func (device *Device) BindUpdate() error {
 			netc.port = 0
 			return err
 		}
-		// netc.netlinkCancel, err = device.startRouteListener(netc.bind)
-		/* if err != nil {
-			netc.bind.Close()
-			netc.bind = nil
-			netc.port = 0
-			return err
-		} */
-
-		// set fwmark
-
-		if netc.fwmark != 0 {
-			err = netc.bind.SetMark(netc.fwmark)
-			if err != nil {
-				return err
-			}
-		}
 
 		// clear cached source addresses
 
@@ -527,10 +474,9 @@ func (device *Device) BindUpdate() error {
 
 		// start receiving routines
 
-		device.net.starting.Add(2)
-		device.net.stopping.Add(2)
-		go device.RoutineReceiveIncoming(ipv4.Version, netc.bind)
-		go device.RoutineReceiveIncoming(ipv6.Version, netc.bind)
+		device.net.starting.Add(1)
+		device.net.stopping.Add(1)
+		go device.RoutineReceiveIncoming(netc.bind)
 		device.net.starting.Wait()
 
 		device.log.Debug.Println("UDP bind has been updated")
