@@ -12,6 +12,9 @@ import (
 	"strconv"
 	"sync"
 	"unsafe"
+
+	"github.com/netsec-ethz/scion-apps/pkg/appnet"
+	"github.com/scionproto/scion/go/lib/snet"
 )
 
 const (
@@ -20,12 +23,12 @@ const (
 
 type NativeEndpoint struct {
 	sync.Mutex
-	dst net.UDPAddr
-	src net.UDPAddr
+	dst snet.UDPAddr
+	src snet.UDPAddr
 }
 
 type nativeBind struct {
-	udpconn *net.UDPConn
+	scionconn *snet.Conn
 }
 
 var _ Endpoint = (*NativeEndpoint)(nil)
@@ -33,7 +36,7 @@ var _ Bind = (*nativeBind)(nil)
 
 func CreateEndpoint(s string) (Endpoint, error) {
 	var end NativeEndpoint
-	addr, err := parseEndpoint(s)
+	addr, err := snet.ParseUDPAddr(s)
 	if err != nil {
 		return nil, err
 	}
@@ -44,31 +47,29 @@ func CreateEndpoint(s string) (Endpoint, error) {
 func createBind(port uint16) (Bind, uint16, error) {
 	var err error
 	var bind nativeBind
-	var laddr net.UDPAddr
 
-	laddr.Port = int(port)
-	bind.udpconn, err = net.ListenUDP("udp", &laddr)
+	bind.scionconn, err = appnet.ListenPort(port)
 	if err != nil {
 		return nil, 0, err
 	}
-	if newladdr, ok := bind.udpconn.LocalAddr().(*net.UDPAddr); ok {
-		port = uint16(newladdr.Port)
+	if newladdr, ok := bind.scionconn.LocalAddr().(*snet.UDPAddr); ok {
+		port = uint16(newladdr.Host.Port)
 	}
 
 	return &bind, port, nil
 }
 
 func (bind *nativeBind) Close() error {
-	return bind.udpconn.Close()
+	return bind.scionconn.Close()
 }
 
 func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 	var end NativeEndpoint
-	size, newDst, err := bind.udpconn.ReadFrom(buff)
+	size, newDst, err := bind.scionconn.ReadFrom(buff)
 	if err != nil {
 		return 0, nil, err
 	}
-	if newDstUDP, ok := newDst.(*net.UDPAddr); ok {
+	if newDstUDP, ok := newDst.(*snet.UDPAddr); ok {
 		end.dst = *newDstUDP
 	}
 	return size, &end, err
@@ -77,21 +78,23 @@ func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 	nend := end.(*NativeEndpoint)
 	nend.Lock()
-	_, err := bind.udpconn.WriteTo(buff, &nend.dst)
+	_, err := bind.scionconn.WriteTo(buff, &nend.dst)
 	nend.Unlock()
 	return err
 }
 
 func (end *NativeEndpoint) SrcIP() net.IP {
-	return end.src.IP
+	return end.src.Host.IP
 }
 
 func (end *NativeEndpoint) DstIP() net.IP {
-	return end.dst.IP
+	return end.dst.Host.IP
 }
 
 func (end *NativeEndpoint) DstToBytes() []byte {
-	return (*[unsafe.Offsetof(end.dst.Port) + unsafe.Sizeof(end.dst.Port)]byte)(unsafe.Pointer(&end.dst))[:]
+	ipprt := (*[unsafe.Offsetof(end.dst.Host.Port) + unsafe.Sizeof(end.dst.Host.Port)]byte)(unsafe.Pointer(&end.dst.Host))[:]
+	ia := (*[unsafe.Offsetof(end.dst.IA) + unsafe.Sizeof(end.dst.IA)]byte)(unsafe.Pointer(&end.dst))[:]
+	return append(ia, ipprt...)
 }
 
 func (end *NativeEndpoint) SrcToString() string {
@@ -103,11 +106,11 @@ func (end *NativeEndpoint) DstToString() string {
 }
 
 func (end *NativeEndpoint) ClearDst() {
-	end.dst.IP = net.IPv4(0, 0, 0, 0)
+	end.dst = snet.UDPAddr{}
 }
 
 func (end *NativeEndpoint) ClearSrc() {
-	end.src.IP = net.IPv4(0, 0, 0, 0)
+	end.src = snet.UDPAddr{}
 }
 
 func zoneToUint32(zone string) (uint32, error) {

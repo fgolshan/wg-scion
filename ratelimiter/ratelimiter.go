@@ -106,6 +106,7 @@ func (rate *Ratelimiter) cleanup() (empty bool) {
 	return len(rate.tableIPv4) == 0 && len(rate.tableIPv6) == 0
 }
 
+//Should be modified to work with SCION addresses
 func (rate *Ratelimiter) Allow(ip net.IP) bool {
 	var entry *RatelimiterEntry
 	var keyIPv4 [net.IPv4len]byte

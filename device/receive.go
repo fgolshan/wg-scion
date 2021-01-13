@@ -386,7 +386,7 @@ func (device *Device) RoutineHandshake() {
 					continue
 				}
 
-				// check ratelimiter
+				// check ratelimiter (should be modified to use the whole SCION address)
 
 				if !device.rate.limiter.Allow(elem.endpoint.DstIP()) {
 					continue
