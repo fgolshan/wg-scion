@@ -52,8 +52,8 @@ func createBind(port uint16) (Bind, uint16, error) {
 	if err != nil {
 		return nil, 0, err
 	}
-	if newladdr, ok := bind.scionconn.LocalAddr().(*snet.UDPAddr); ok {
-		port = uint16(newladdr.Host.Port)
+	if newladdr, ok := bind.scionconn.LocalAddr().(*net.UDPAddr); ok {
+		port = uint16(newladdr.Port)
 	}
 
 	return &bind, port, nil
