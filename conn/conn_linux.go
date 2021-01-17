@@ -78,8 +78,12 @@ func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 	nend := end.(*NativeEndpoint)
 	nend.Lock()
-	_, err := bind.scionconn.WriteTo(buff, &nend.dst)
-	nend.Unlock()
+	defer nend.Unlock()
+	err := appnet.SetDefaultPath(&nend.dst)
+	if err != nil {
+		return err
+	}
+	_, err = bind.scionconn.WriteTo(buff, &nend.dst)
 	return err
 }
 
