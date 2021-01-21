@@ -197,8 +197,9 @@ func (peer *Peer) SendBufferMult(buffer []byte) error {
 }
 
 func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
+	var void struct{}
 	for i := 0; i < int(min(MaxNoOfPaths, uint(len(paths)))); i++ {
-		peer.paths.pathsOut[paths[i]] = struct{}{}
+		peer.paths.pathsOut[paths[i]] = void
 	}
 	return
 }
