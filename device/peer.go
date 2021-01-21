@@ -13,6 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/scionproto/scion/go/lib/snet"
 	"golang.zx2c4.com/wireguard/conn"
 )
 
@@ -50,6 +51,8 @@ type Peer struct {
 		handshakeAttempts       uint32
 		needAnotherKeepalive    AtomicBool
 		sentLastMinuteHandshake AtomicBool
+		lastInitiationWasMult   AtomicBool
+		gotCookieReply          AtomicBool
 	}
 
 	signals struct {
@@ -73,6 +76,11 @@ type Peer struct {
 	}
 
 	cookieGenerator CookieGenerator
+
+	paths struct {
+		pathItrOut snet.Path              // remembers the last selected outward path
+		pathsOut   map[snet.Path]struct{} // remembers the paths over which initiation messages were sent
+	}
 }
 
 func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
@@ -156,6 +164,117 @@ func (peer *Peer) SendBuffer(buffer []byte) error {
 		atomic.AddUint64(&peer.stats.txBytes, uint64(len(buffer)))
 	}
 	return err
+}
+
+func (peer *Peer) SendBufferMult(buffer []byte) error {
+	peer.device.net.RLock()
+	defer peer.device.net.RUnlock()
+
+	if peer.device.net.bind == nil {
+		return errors.New("no bind")
+	}
+
+	peer.RLock()
+	defer peer.RUnlock()
+
+	if peer.endpoint == nil {
+		return errors.New("no known endpoint for peer")
+	}
+
+	var err error
+	paths := peer.paths.pathsOut
+	packetCount := 0
+	for path := range paths {
+		err = peer.device.net.bind.SendOver(buffer, peer.endpoint, path)
+		if err != nil {
+			break
+		}
+		packetCount++
+	}
+	atomic.AddUint64(&peer.stats.txBytes, uint64(len(buffer)*packetCount))
+	return err
+}
+
+func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
+	for i := 0; i < int(min(MaxNoOfPaths, uint(len(paths)))); i++ {
+		peer.paths.pathsOut[paths[i]] = struct{}{}
+	}
+	return
+}
+
+func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
+	if _, ok := peer.paths.pathsOut[path]; !ok {
+		return nil
+	}
+
+	pathCurr, err := peer.endpoint.GetDstPath()
+	if err != nil {
+		return err
+	}
+
+	if func(fpCurr, fpCand string) bool {
+		fpIter := snet.Fingerprint(peer.paths.pathItrOut).String()
+		if fpIter < fpCurr {
+			return fpCand > fpIter && fpCand < fpCurr
+		}
+		if fpIter > fpCurr {
+			return fpCand > fpIter || fpCand < fpCurr
+		}
+		return true
+	}(snet.Fingerprint(pathCurr).String(), snet.Fingerprint(path).String()) {
+		peer.endpoint.SetDstPath(path)
+	}
+
+	return nil
+}
+
+func (peer *Peer) UpdatePathItrOut() error {
+	if peer.paths.pathItrOut == nil {
+		paths, err := peer.endpoint.GetDstPaths()
+		if err != nil || len(paths) == 0 {
+			return err
+		}
+		peer.paths.pathItrOut = paths[0]
+		return nil
+	}
+
+	paths := peer.paths.pathsOut
+	if len(paths) == 0 {
+		return errors.New("Can't update path iterator with no paths available")
+	}
+
+	// since MaxNoOfPaths is a reasonable constant, this is good enough
+
+	itrFp := snet.Fingerprint(peer.paths.pathItrOut).String()
+	var cand snet.Path
+	var candFp string
+	min := func(ps map[snet.Path]struct{}) snet.Path {
+		var p snet.Path
+		for p = range ps {
+			return p
+		}
+		return p
+	}(paths)
+	minFp := snet.Fingerprint(min).String()
+
+	for curr := range peer.paths.pathsOut {
+		currFp := snet.Fingerprint(curr).String()
+		if currFp < minFp {
+			min = curr
+			minFp = currFp
+		}
+		if currFp > itrFp && (candFp == "" || currFp < candFp) {
+			cand = curr
+			candFp = currFp
+		}
+	}
+
+	if candFp == "" {
+		peer.paths.pathItrOut = min
+		return nil
+	}
+	peer.paths.pathItrOut = cand
+	return nil
 }
 
 func (peer *Peer) String() string {

@@ -135,6 +135,77 @@ func (peer *Peer) SendKeepalive() bool {
 	}
 }
 
+func (peer *Peer) sendHandshakeInitiationSingle() error {
+	msg, err := peer.device.CreateMessageInitiation(peer)
+	if err != nil {
+		peer.device.log.Error.Println(peer, "- Failed to create initiation message:", err)
+		return err
+	}
+
+	var buff [MessageInitiationSize]byte
+	writer := bytes.NewBuffer(buff[:0])
+	binary.Write(writer, binary.LittleEndian, msg)
+	packet := writer.Bytes()
+	peer.cookieGenerator.AddMacs(packet)
+
+	peer.timersAnyAuthenticatedPacketTraversal()
+	peer.timersAnyAuthenticatedPacketSent()
+
+	err = peer.SendBuffer(packet)
+	if err != nil {
+		peer.device.log.Error.Println(peer, "- Failed to send handshake initiation", err)
+	}
+
+	peer.timersHandshakeInitiated()
+
+	return err
+}
+
+func (peer *Peer) sendHandshakeInitiationMult() error {
+	msg, err := peer.device.CreateMessageInitiationMult(peer)
+	if err != nil {
+		peer.device.log.Error.Println(peer, "- Failed to create multipath initiation message", err)
+		return err
+	}
+
+	var buff [MessageInitiationSize]byte
+	writer := bytes.NewBuffer(buff[:0])
+	binary.Write(writer, binary.LittleEndian, msg)
+	packet := writer.Bytes()
+	peer.cookieGenerator.AddMacs(packet)
+
+	peer.timersAnyAuthenticatedPacketTraversal()
+	peer.timersAnyAuthenticatedPacketSent()
+
+	peer.Lock()
+
+	paths, errpath := peer.endpoint.GetDstPaths()
+	if errpath != nil {
+		peer.device.log.Error.Println(peer, "- Failed to query paths", errpath)
+		peer.Unlock()
+		return errpath
+	}
+
+	peer.UpdatePathsOut(paths)
+	err = peer.UpdatePathItrOut()
+
+	peer.Unlock()
+
+	if err != nil {
+		peer.device.log.Error.Println(peer, "-Failed to update the path iterator", err)
+		return err
+	}
+
+	err = peer.SendBufferMult(packet)
+	if err != nil {
+		peer.device.log.Error.Println(peer, "-Fariled to send multipath handshake initiation", err)
+	}
+
+	peer.timersHandshakeInitiated()
+
+	return err
+}
+
 func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	if !isRetry {
 		atomic.StoreUint32(&peer.timers.handshakeAttempts, 0)
@@ -155,30 +226,20 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	peer.handshake.lastSentHandshake = time.Now()
 	peer.handshake.mutex.Unlock()
 
-	peer.device.log.Debug.Println(peer, "- Sending handshake initiation")
+	lastInitiationWasMult := peer.timers.lastInitiationWasMult.Get()
+	gotCookieReply := peer.timers.gotCookieReply.Get()
 
-	msg, err := peer.device.CreateMessageInitiation(peer)
-	if err != nil {
-		peer.device.log.Error.Println(peer, "- Failed to create initiation message:", err)
-		return err
+	if !isRetry || (lastInitiationWasMult && gotCookieReply) {
+		peer.device.log.Debug.Println(peer, "- Sending handshake initiation")
+		peer.timers.lastInitiationWasMult.Set(false)
+		peer.timers.gotCookieReply.Set(false)
+		return peer.sendHandshakeInitiationSingle()
 	}
 
-	var buff [MessageInitiationSize]byte
-	writer := bytes.NewBuffer(buff[:0])
-	binary.Write(writer, binary.LittleEndian, msg)
-	packet := writer.Bytes()
-	peer.cookieGenerator.AddMacs(packet)
-
-	peer.timersAnyAuthenticatedPacketTraversal()
-	peer.timersAnyAuthenticatedPacketSent()
-
-	err = peer.SendBuffer(packet)
-	if err != nil {
-		peer.device.log.Error.Println(peer, "- Failed to send handshake initiation", err)
-	}
-	peer.timersHandshakeInitiated()
-
-	return err
+	peer.device.log.Debug.Println(peer, "- Sending multipath handshake initiation")
+	peer.timers.lastInitiationWasMult.Set(true)
+	peer.timers.gotCookieReply.Set(false)
+	return peer.sendHandshakeInitiationMult()
 }
 
 func (peer *Peer) SendHandshakeResponse() error {

@@ -54,10 +54,11 @@ const (
 )
 
 const (
-	MessageInitiationType  = 1
-	MessageResponseType    = 2
-	MessageCookieReplyType = 3
-	MessageTransportType   = 4
+	MessageInitiationType     = 1
+	MessageResponseType       = 2
+	MessageCookieReplyType    = 3
+	MessageTransportType      = 4
+	MessageInitiationMultType = 5
 )
 
 const (
@@ -68,6 +69,7 @@ const (
 	MessageTransportSize       = MessageTransportHeaderSize + poly1305.TagSize // size of empty transport
 	MessageKeepaliveSize       = MessageTransportSize                          // size of keepalive
 	MessageHandshakeSize       = MessageInitiationSize                         // size of largest handshake related message
+	MessageInitiationMultSize  = MessageInitiationSize                         // size of multipath handshake initiation message
 )
 
 const (
@@ -91,6 +93,8 @@ type MessageInitiation struct {
 	MAC1      [blake2s.Size128]byte
 	MAC2      [blake2s.Size128]byte
 }
+
+type MessageInitiationMult MessageInitiation
 
 type MessageResponse struct {
 	Type      uint32
@@ -245,6 +249,12 @@ func (device *Device) CreateMessageInitiation(peer *Peer) (*MessageInitiation, e
 	handshake.mixHash(msg.Timestamp[:])
 	handshake.state = handshakeInitiationCreated
 	return &msg, nil
+}
+
+func (device *Device) CreateMessageInitiationMult(peer *Peer) (*MessageInitiation, error) {
+	msg, err := peer.device.CreateMessageInitiation(peer)
+	msg.Type = MessageInitiationMultType
+	return msg, err
 }
 
 func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {

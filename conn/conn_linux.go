@@ -79,11 +79,27 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 	nend := end.(*NativeEndpoint)
 	nend.Lock()
 	defer nend.Unlock()
-	err := appnet.SetDefaultPath(&nend.dst)
+	if nend.dst.Path.IsEmpty() {
+		err := appnet.SetDefaultPath(&nend.dst)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := bind.scionconn.WriteTo(buff, &nend.dst)
+	return err
+}
+
+func (bind *nativeBind) SendOver(buff []byte, end Endpoint, path snet.Path) error {
+	nend := end.(*NativeEndpoint)
+	nend.Lock()
+	defer nend.Unlock()
+	addr, err := snet.ParseUDPAddr(nend.dst.String())
 	if err != nil {
 		return err
 	}
-	_, err = bind.scionconn.WriteTo(buff, &nend.dst)
+	appnet.SetPath(addr, path)
+
+	_, err = bind.scionconn.WriteTo(buff, addr)
 	return err
 }
 
@@ -115,6 +131,18 @@ func (end *NativeEndpoint) ClearDst() {
 
 func (end *NativeEndpoint) ClearSrc() {
 	end.src = snet.UDPAddr{}
+}
+
+func (end *NativeEndpoint) GetDstPath() (snet.Path, error) {
+	return end.dst.GetPath()
+}
+
+func (end *NativeEndpoint) SetDstPath(path snet.Path) {
+	appnet.SetPath(&end.dst, path)
+}
+
+func (end *NativeEndpoint) GetDstPaths() ([]snet.Path, error) {
+	return appnet.QueryPaths(end.dst.IA)
 }
 
 func zoneToUint32(zone string) (uint32, error) {

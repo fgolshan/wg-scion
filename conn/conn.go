@@ -10,6 +10,8 @@ import (
 	"errors"
 	"net"
 	"strings"
+
+	"github.com/scionproto/scion/go/lib/snet"
 )
 
 // A Bind listens on a port for both IPv6 and IPv4 UDP traffic.
@@ -26,6 +28,9 @@ type Bind interface {
 
 	// Send writes a packet b to address ep.
 	Send(b []byte, ep Endpoint) error
+
+	//SendOver writes a packet b to address ep over path p
+	SendOver(b []byte, ep Endpoint, p snet.Path) error
 
 	// Close closes the Bind connection.
 	Close() error
@@ -64,6 +69,9 @@ type Endpoint interface {
 	DstToBytes() []byte  // used for mac2 cookie calculations
 	DstIP() net.IP
 	SrcIP() net.IP
+	GetDstPath() (snet.Path, error)    // returns current path to destination
+	SetDstPath(snet.Path)              // sets current path to destination
+	GetDstPaths() ([]snet.Path, error) // returns all available paths to destination
 }
 
 func parseEndpoint(s string) (*net.UDPAddr, error) {

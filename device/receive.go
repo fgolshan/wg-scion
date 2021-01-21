@@ -208,6 +208,9 @@ func (device *Device) RoutineReceiveIncoming(bind conn.Bind) {
 		case MessageCookieReplyType:
 			okay = len(packet) == MessageCookieReplySize
 
+		case MessageInitiationMultType:
+			okay = len(packet) == MessageInitiationMultSize
+
 		default:
 			logDebug.Println("Received message with unknown type")
 		}
@@ -361,12 +364,28 @@ func (device *Device) RoutineHandshake() {
 				logDebug.Println("Receiving cookie response from ", elem.endpoint.DstToString())
 				if !peer.cookieGenerator.ConsumeReply(&reply) {
 					logDebug.Println("Could not decrypt invalid cookie response")
+					continue
+				}
+				peer.timers.gotCookieReply.Set(true)
+				if peer.timers.lastInitiationWasMult.Get() {
+					peer.Lock()
+					path, errpath := elem.endpoint.GetDstPath()
+					if errpath != nil {
+						logDebug.Println("Could not get path to destination from endpoint: ", errpath)
+						peer.Unlock()
+						continue
+					}
+					errpath = peer.UpdateCurrPathOut(path)
+					if errpath != nil {
+						logDebug.Println("Failed to update path: ", errpath)
+					}
+					peer.Unlock()
 				}
 			}
 
 			continue
 
-		case MessageInitiationType, MessageResponseType:
+		case MessageInitiationType, MessageResponseType, MessageInitiationMultType:
 
 			// check mac fields and maybe ratelimit
 
@@ -376,6 +395,11 @@ func (device *Device) RoutineHandshake() {
 			}
 
 			// endpoints destination address is the source of the datagram
+
+			if elem.msgType == MessageInitiationMultType {
+				device.SendHandshakeCookie(&elem)
+				continue
+			}
 
 			if device.IsUnderLoad() {
 
