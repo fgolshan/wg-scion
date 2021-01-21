@@ -111,6 +111,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.cookieGenerator.Init(pk)
 	peer.device = device
 	peer.isRunning.Set(false)
+	peer.paths.pathsOut = make(map[snet.Path]struct{})
 
 	// map public key
 
