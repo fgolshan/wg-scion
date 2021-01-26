@@ -78,8 +78,8 @@ type Peer struct {
 	cookieGenerator CookieGenerator
 
 	paths struct {
-		pathItrOut snet.Path              // remembers the last selected outward path
-		pathsOut   map[snet.Path]struct{} // remembers the paths over which initiation messages were sent
+		pathItrOut snet.Path            // remembers the last selected outward path
+		pathsOut   map[string]snet.Path // remembers the paths over which initiation messages were sent
 	}
 }
 
@@ -111,7 +111,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.cookieGenerator.Init(pk)
 	peer.device = device
 	peer.isRunning.Set(false)
-	peer.paths.pathsOut = make(map[snet.Path]struct{})
+	peer.paths.pathsOut = make(map[string]snet.Path)
 
 	// map public key
 
@@ -185,7 +185,7 @@ func (peer *Peer) SendBufferMult(buffer []byte) error {
 	var err error
 	paths := peer.paths.pathsOut
 	packetCount := 0
-	for path := range paths {
+	for _, path := range paths {
 		err = peer.device.net.bind.SendOver(buffer, peer.endpoint, path)
 		if err != nil {
 			break
@@ -197,15 +197,21 @@ func (peer *Peer) SendBufferMult(buffer []byte) error {
 }
 
 func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
-	var void struct{}
+
+	peer.paths.pathsOut = make(map[string]snet.Path)
+
 	for i := 0; i < int(min(MaxNoOfPaths, uint(len(paths)))); i++ {
-		peer.paths.pathsOut[paths[i]] = void
+		p := paths[i]
+		fp := snet.Fingerprint(p).String()
+		peer.paths.pathsOut[fp] = p
 	}
+
 	return
 }
 
 func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
-	if _, ok := peer.paths.pathsOut[path]; !ok {
+	fp := snet.Fingerprint(path).String()
+	if _, ok := peer.paths.pathsOut[fp]; !ok {
 		return nil
 	}
 
@@ -250,17 +256,16 @@ func (peer *Peer) UpdatePathItrOut() error {
 	itrFp := snet.Fingerprint(peer.paths.pathItrOut).String()
 	var cand snet.Path
 	var candFp string
-	min := func(ps map[snet.Path]struct{}) snet.Path {
+	minFp, min := func(ps map[string]snet.Path) (string, snet.Path) {
 		var p snet.Path
-		for p = range ps {
-			return p
+		var s string
+		for s, p = range ps {
+			return s, p
 		}
-		return p
+		return s, p
 	}(paths)
-	minFp := snet.Fingerprint(min).String()
 
-	for curr := range peer.paths.pathsOut {
-		currFp := snet.Fingerprint(curr).String()
+	for currFp, curr := range paths {
 		if currFp < minFp {
 			min = curr
 			minFp = currFp
