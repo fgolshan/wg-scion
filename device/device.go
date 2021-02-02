@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/scionproto/scion/go/lib/snet"
 	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/ratelimiter"
 	"golang.zx2c4.com/wireguard/rwcancel"
@@ -86,6 +87,11 @@ type Device struct {
 	tun struct {
 		device tun.Device
 		mtu    int32
+	}
+
+	adversaries struct {
+		sync.RWMutex
+		adversaryOut Adversary
 	}
 }
 
@@ -269,6 +275,8 @@ func NewDevice(tunDevice tun.Device, logger *Logger) *Device {
 
 	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
 
+	device.adversaries.adversaryOut = new(SimpleAdversary)
+
 	device.rate.limiter.Init()
 	device.rate.underLoadUntil.Store(time.Time{})
 
@@ -313,6 +321,18 @@ func NewDevice(tunDevice tun.Device, logger *Logger) *Device {
 	device.state.starting.Wait()
 
 	return device
+}
+
+func (device *Device) UpdateAdversaries(paths []snet.Path) {
+	device.adversaries.Lock()
+	device.adversaries.adversaryOut.updatePaths(paths)
+	device.adversaries.Unlock()
+}
+
+func (device *Device) AdversaryDrops(end conn.Endpoint, buffer []byte) (bool, error) {
+	device.adversaries.Lock()
+	defer device.adversaries.Unlock()
+	return device.adversaries.adversaryOut.getsDropped(end, buffer)
 }
 
 func (device *Device) LookupPeer(pk NoisePublicKey) *Peer {

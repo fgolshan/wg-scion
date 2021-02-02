@@ -103,6 +103,18 @@ func (bind *nativeBind) SendOver(buff []byte, end Endpoint, path snet.Path) erro
 	return err
 }
 
+func GetNewEndpointOver(end Endpoint, path snet.Path) (Endpoint, error) {
+	nend := end.(*NativeEndpoint)
+	nend.Lock()
+	defer nend.Unlock()
+	newend, err := CreateEndpoint(nend.dst.String())
+	if err != nil {
+		return newend, err
+	}
+	newend.SetDstPath(path)
+	return newend, nil
+}
+
 func (end *NativeEndpoint) SrcIP() net.IP {
 	return end.src.Host.IP
 }

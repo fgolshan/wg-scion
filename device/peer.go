@@ -160,6 +160,14 @@ func (peer *Peer) SendBuffer(buffer []byte) error {
 		return errors.New("no known endpoint for peer")
 	}
 
+	if drop, err := peer.device.AdversaryDrops(peer.endpoint, buffer); drop {
+		if err != nil {
+			return err
+		}
+		peer.device.log.Debug.Println("Attacker is dropping packet for ", peer.endpoint.DstToString())
+		return nil
+	}
+
 	err := peer.device.net.bind.Send(buffer, peer.endpoint)
 	if err == nil {
 		atomic.AddUint64(&peer.stats.txBytes, uint64(len(buffer)))
@@ -186,6 +194,17 @@ func (peer *Peer) SendBufferMult(buffer []byte) error {
 	paths := peer.paths.pathsOut
 	packetCount := 0
 	for _, path := range paths {
+		end, err := conn.GetNewEndpointOver(peer.endpoint, path)
+		if err != nil {
+			break
+		}
+		if drop, err := peer.device.AdversaryDrops(end, buffer); drop {
+			if err != nil {
+				break
+			}
+			peer.device.log.Debug.Println("Attacker is dropping packet for ", end.DstToString())
+			continue
+		}
 		err = peer.device.net.bind.SendOver(buffer, peer.endpoint, path)
 		if err != nil {
 			break

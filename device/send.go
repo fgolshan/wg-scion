@@ -187,6 +187,7 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 	}
 
 	peer.UpdatePathsOut(paths)
+	peer.device.UpdateAdversaries(paths)
 	err = peer.UpdatePathItrOut()
 
 	peer.Unlock()
@@ -294,6 +295,14 @@ func (device *Device) SendHandshakeCookie(initiatingElem *QueueHandshakeElement)
 	var buff [MessageCookieReplySize]byte
 	writer := bytes.NewBuffer(buff[:0])
 	binary.Write(writer, binary.LittleEndian, reply)
+	if drop, err := device.AdversaryDrops(initiatingElem.endpoint, writer.Bytes()); drop {
+		if err != nil {
+			device.log.Error.Println("Attacker failed to read path from endpoint:", err)
+			return err
+		}
+		device.log.Debug.Println("Attacker is dropping cookie response for ", initiatingElem.endpoint.DstToString())
+		return nil
+	}
 	device.net.bind.Send(writer.Bytes(), initiatingElem.endpoint)
 	return nil
 }
