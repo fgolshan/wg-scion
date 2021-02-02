@@ -206,7 +206,7 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 	return err
 }
 
-func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
+func (peer *Peer) SendHandshakeInitiation(isRetry, replyMissing bool) error {
 	if !isRetry {
 		atomic.StoreUint32(&peer.timers.handshakeAttempts, 0)
 	}
@@ -229,11 +229,13 @@ func (peer *Peer) SendHandshakeInitiation(isRetry bool) error {
 	lastInitiationWasMult := peer.timers.lastInitiationWasMult.Get()
 	gotCookieReply := peer.timers.gotCookieReply.Get()
 
-	if !isRetry || (lastInitiationWasMult && gotCookieReply) {
-		peer.device.log.Debug.Println(peer, "- Sending handshake initiation")
-		peer.timers.lastInitiationWasMult.Set(false)
-		peer.timers.gotCookieReply.Set(false)
-		return peer.sendHandshakeInitiationSingle()
+	if !replyMissing {
+		if !isRetry || (lastInitiationWasMult && gotCookieReply) {
+			peer.device.log.Debug.Println(peer, "- Sending handshake initiation")
+			peer.timers.lastInitiationWasMult.Set(false)
+			peer.timers.gotCookieReply.Set(false)
+			return peer.sendHandshakeInitiationSingle()
+		}
 	}
 
 	peer.device.log.Debug.Println(peer, "- Sending multipath handshake initiation")
@@ -303,7 +305,7 @@ func (peer *Peer) keepKeyFreshSending() {
 	}
 	nonce := atomic.LoadUint64(&keypair.sendNonce)
 	if nonce > RekeyAfterMessages || (keypair.isInitiator && time.Since(keypair.created) > RekeyAfterTime) {
-		peer.SendHandshakeInitiation(false)
+		peer.SendHandshakeInitiation(false, false)
 	}
 }
 
@@ -386,7 +388,7 @@ func (device *Device) RoutineReadFromTUN() {
 		peer.queue.RLock()
 		if peer.isRunning.Get() {
 			if peer.queue.packetInNonceQueueIsAwaitingKey.Get() {
-				peer.SendHandshakeInitiation(false)
+				peer.SendHandshakeInitiation(false, false)
 			}
 			addToNonceQueue(peer.queue.nonce, elem, device)
 			elem = nil
@@ -475,7 +477,7 @@ NextPacket:
 				default:
 				}
 
-				peer.SendHandshakeInitiation(false)
+				peer.SendHandshakeInitiation(false, false)
 
 				// wait for key to be established
 
