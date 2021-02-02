@@ -24,9 +24,9 @@ func (adversary *SimpleAdversary) getsDropped(end conn.Endpoint, buffer []byte) 
 	nend := end.(*conn.NativeEndpoint)
 	nend.Lock()
 	defer nend.Unlock()
-	var err error
 	if adversary.blockedPath == nil {
-		adversary.blockedPath, err = nend.GetDstPath()
+		currpath, err := nend.GetDstPath()
+		adversary.blockedPath = currpath
 		return true, err
 	}
 	path, err := nend.GetDstPath()
