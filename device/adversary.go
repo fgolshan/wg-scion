@@ -5,6 +5,8 @@
 package device
 
 import (
+	"fmt"
+
 	"github.com/scionproto/scion/go/lib/snet"
 	"golang.zx2c4.com/wireguard/conn"
 )
@@ -27,9 +29,11 @@ func (adversary *SimpleAdversary) getsDropped(end conn.Endpoint, buffer []byte) 
 	if adversary.blockedPath == nil {
 		currpath, err := nend.GetDstPath()
 		adversary.blockedPath = currpath
+		fmt.Println("I have chosen path: ", snet.Fingerprint(currpath))
 		return true, err
 	}
 	path, err := nend.GetDstPath()
+	fmt.Println("I'm checking if the attacked path equals: ", snet.Fingerprint(path))
 	return snet.Fingerprint(path).String() == snet.Fingerprint(adversary.blockedPath).String(), err
 }
 
