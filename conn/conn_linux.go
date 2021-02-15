@@ -8,6 +8,7 @@
 package conn
 
 import (
+	"crypto/sha256"
 	"net"
 	"strconv"
 	"sync"
