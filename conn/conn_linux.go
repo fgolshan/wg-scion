@@ -8,6 +8,8 @@
 package conn
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -15,6 +17,7 @@ import (
 
 	"github.com/netsec-ethz/scion-apps/pkg/appnet"
 	"github.com/scionproto/scion/go/lib/snet"
+	"github.com/scionproto/scion/go/lib/spath"
 )
 
 const (
@@ -63,6 +66,12 @@ func (bind *nativeBind) Close() error {
 	return bind.scionconn.Close()
 }
 
+func Fingerprint(path spath.Path) string {
+	hash := sha256.New()
+	hash.Write(path.Raw)
+	return string(hash.Sum(nil))
+}
+
 func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 	var end NativeEndpoint
 	size, newDst, err := bind.scionconn.ReadFrom(buff)
@@ -75,7 +84,7 @@ func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 	return size, &end, err
 }
 
-func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
+func (bind *nativeBind) Send(buff []byte, end Endpoint, adv Adversary) error {
 	nend := end.(*NativeEndpoint)
 	nend.Lock()
 	defer nend.Unlock()
@@ -85,11 +94,19 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint) error {
 			return err
 		}
 	}
+	fmt.Println("Sending packet over: ", Fingerprint(nend.dst.Path))
+	if drop, err := adv.getsDropped(end, buff); drop {
+		if err != nil {
+			return err
+		}
+		fmt.Println("Adversary is dropping packet")
+		return nil
+	}
 	_, err := bind.scionconn.WriteTo(buff, &nend.dst)
 	return err
 }
 
-func (bind *nativeBind) SendOver(buff []byte, end Endpoint, path snet.Path) error {
+/* func (bind *nativeBind) SendOver(buff []byte, end Endpoint, path snet.Path) error {
 	nend := end.(*NativeEndpoint)
 	nend.Lock()
 	defer nend.Unlock()
@@ -101,7 +118,7 @@ func (bind *nativeBind) SendOver(buff []byte, end Endpoint, path snet.Path) erro
 
 	_, err = bind.scionconn.WriteTo(buff, addr)
 	return err
-}
+        } */
 
 func GetNewEndpointOver(end Endpoint, path snet.Path) (Endpoint, error) {
 	nend := end.(*NativeEndpoint)

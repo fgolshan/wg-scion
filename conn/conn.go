@@ -27,10 +27,10 @@ type Bind interface {
 	ReceiveIP(buff []byte) (n int, ep Endpoint, err error)
 
 	// Send writes a packet b to address ep.
-	Send(b []byte, ep Endpoint) error
+	Send(b []byte, ep Endpoint, adv Adversary) error
 
 	//SendOver writes a packet b to address ep over path p
-	SendOver(b []byte, ep Endpoint, p snet.Path) error
+	//SendOver(b []byte, ep Endpoint, p snet.Path) error
 
 	// Close closes the Bind connection.
 	Close() error
