@@ -106,20 +106,6 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint, adv Adversary) error {
 	return err
 }
 
-/* func (bind *nativeBind) SendOver(buff []byte, end Endpoint, path snet.Path) error {
-	nend := end.(*NativeEndpoint)
-	nend.Lock()
-	defer nend.Unlock()
-	addr, err := snet.ParseUDPAddr(nend.dst.String())
-	if err != nil {
-		return err
-	}
-	appnet.SetPath(addr, path)
-
-	_, err = bind.scionconn.WriteTo(buff, addr)
-	return err
-        } */
-
 func GetNewEndpointOver(end Endpoint, path snet.Path) (Endpoint, error) {
 	nend := end.(*NativeEndpoint)
 	nend.Lock()
