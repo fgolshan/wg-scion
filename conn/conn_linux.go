@@ -63,6 +63,12 @@ func (bind *nativeBind) Close() error {
 	return bind.scionconn.Close()
 }
 
+func Fingerprint(path snet.Path) string {
+	hash := sha256.New()
+	hash.Write(path.Path().Raw)
+	return string(hash.Sum(nil))
+}
+
 func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 	var end NativeEndpoint
 	size, newDst, err := bind.scionconn.ReadFrom(buff)
