@@ -187,7 +187,7 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 	}
 
 	peer.UpdatePathsOut(paths)
-	peer.device.adversary.UpdatePaths(paths)
+	peer.device.adversary.UpdatePaths(peer.paths.pathsOut)
 	err = peer.UpdatePathItrOut()
 
 	peer.Unlock()
