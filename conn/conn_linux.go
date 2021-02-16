@@ -17,7 +17,6 @@ import (
 
 	"github.com/netsec-ethz/scion-apps/pkg/appnet"
 	"github.com/scionproto/scion/go/lib/snet"
-	"github.com/scionproto/scion/go/lib/spath"
 )
 
 const (
@@ -66,9 +65,9 @@ func (bind *nativeBind) Close() error {
 	return bind.scionconn.Close()
 }
 
-func Fingerprint(path spath.Path) string {
+func Fingerprint(path snet.Path) string {
 	hash := sha256.New()
-	hash.Write(path.Raw)
+	hash.Write(path.Path().Raw)
 	return string(hash.Sum(nil))
 }
 
@@ -94,7 +93,8 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint, adv Adversary) error {
 			return err
 		}
 	}
-	fmt.Println("Sending packet over: ", Fingerprint(nend.dst.Path))
+	path, _ := nend.GetDstPath()
+	fmt.Println("Sending packet over: ", Fingerprint(path))
 	if drop, err := adv.getsDropped(end, buff); drop {
 		if err != nil {
 			return err

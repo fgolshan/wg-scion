@@ -206,7 +206,7 @@ func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
 
 	for i := 0; i < int(min(MaxNoOfPaths, uint(len(paths)))); i++ {
 		p := paths[i]
-		fp := conn.Fingerprint(p.Path())
+		fp := conn.Fingerprint(p)
 		peer.paths.pathsOut[fp] = p
 	}
 
@@ -214,7 +214,7 @@ func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
 }
 
 func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
-	fp := conn.Fingerprint(path.Path())
+	fp := conn.Fingerprint(path)
 	if _, ok := peer.paths.pathsOut[fp]; !ok {
 		return nil
 	}
@@ -225,7 +225,7 @@ func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
 	}
 
 	if func(fpCurr, fpCand string) bool {
-		fpIter := conn.Fingerprint(peer.paths.pathItrOut.Path())
+		fpIter := conn.Fingerprint(peer.paths.pathItrOut)
 		if fpIter < fpCurr {
 			return fpCand > fpIter && fpCand < fpCurr
 		}
@@ -233,7 +233,7 @@ func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
 			return fpCand > fpIter || fpCand < fpCurr
 		}
 		return true
-	}(conn.Fingerprint(pathCurr.Path()), fp) {
+	}(conn.Fingerprint(pathCurr), fp) {
 		peer.endpoint.SetDstPath(path)
 	}
 
@@ -257,7 +257,7 @@ func (peer *Peer) UpdatePathItrOut() error {
 
 	// since MaxNoOfPaths is a reasonable constant, this is good enough
 
-	itrFp := conn.Fingerprint(peer.paths.pathItrOut.Path())
+	itrFp := conn.Fingerprint(peer.paths.pathItrOut)
 	var cand snet.Path
 	var candFp string
 	minFp, min := func(ps map[string]snet.Path) (string, snet.Path) {
