@@ -94,7 +94,7 @@ func (bind *nativeBind) Send(buff []byte, end Endpoint, adv Adversary) error {
 		}
 	}
 	path, _ := nend.GetDstPath()
-	fmt.Println("Sending packet over: ", Fingerprint(path))
+	fmt.Printf("Sending packet over: % x\n", Fingerprint(path))
 	if drop, err := adv.getsDropped(end, buff); drop {
 		if err != nil {
 			return err
