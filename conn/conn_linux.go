@@ -79,6 +79,8 @@ func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 	}
 	if newDstUDP, ok := newDst.(*snet.UDPAddr); ok {
 		end.dst = *newDstUDP
+		path, _ := end.GetDstPath()
+		fmt.Printf("Receiving packet over: % x\n", Fingerprint(path))
 	}
 	return size, &end, err
 }

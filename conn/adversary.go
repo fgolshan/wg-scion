@@ -10,6 +10,13 @@ import (
 	"github.com/scionproto/scion/go/lib/snet"
 )
 
+// Constants from device/noise-protocol.go. Should be passed over to the respective adversaries properly.
+const (
+	MessageInitiationSize  = 148
+	MessageResponseSize    = 92
+	MessageCookieReplySize = 64
+)
+
 type Adversary interface {
 	getsDropped(e Endpoint, b []byte) (bool, error)
 
@@ -50,10 +57,14 @@ func (adversary *SimpleAdversary) UpdatePaths(paths map[string]snet.Path) {
 	return
 }
 
-// This adversary blocks all WireGuard packets on all but one paths.
+/* This adversary blocks all WireGuard packets on all but one outgoing path of an initiating peer.
+   It's not intended for blocking traffic on responder paths or for long-run testing. T
+   The safe path is chosen as the last one when iterating through a map of exposed paths.
+*/
 type AllButOneAdversary struct {
 	sync.Mutex
 	blockedPaths map[string]snet.Path
+	safePath     snet.Path
 }
 
 func (adversary *AllButOneAdversary) getsDropped(end Endpoint, buffer []byte) (bool, error) {
@@ -66,8 +77,6 @@ func (adversary *AllButOneAdversary) getsDropped(end Endpoint, buffer []byte) (b
 	}
 	fp := Fingerprint(path)
 	if adversary.blockedPaths == nil {
-		adversary.blockedPaths = make(map[string]snet.Path)
-		adversary.blockedPaths[fp] = path
 		return true, nil
 	}
 	_, ok := adversary.blockedPaths[fp]
@@ -77,12 +86,82 @@ func (adversary *AllButOneAdversary) getsDropped(end Endpoint, buffer []byte) (b
 func (adversary *AllButOneAdversary) UpdatePaths(paths map[string]snet.Path) {
 	adversary.Lock()
 	defer adversary.Unlock()
-	adversary.blockedPaths = make(map[string]snet.Path)
 	var fp string
 	var p snet.Path
+	if adversary.blockedPaths == nil {
+		adversary.blockedPaths = make(map[string]snet.Path)
+		for fp, p = range paths {
+			adversary.blockedPaths[fp] = p
+		}
+		delete(adversary.blockedPaths, fp)
+		adversary.safePath = p
+		return
+	}
+	spfp := Fingerprint(adversary.safePath)
+	adversary.safePath = nil
 	for fp, p = range paths {
+		if fp == spfp {
+			adversary.safePath = p
+			continue
+		}
 		adversary.blockedPaths[fp] = p
 	}
-	delete(adversary.blockedPaths, fp)
+	if adversary.safePath == nil {
+		delete(adversary.blockedPaths, fp)
+		adversary.safePath = p
+	}
 	return
+}
+
+// This adversary behaves the same as the AllButOneAdversary but the first packet on the safe path gets lost.
+type AllButOneLossyAdversary struct {
+	AllButOneAdversary
+	hadLoss bool
+}
+
+func (adversary *AllButOneLossyAdversary) getsDropped(end Endpoint, buffer []byte) (bool, error) {
+	drop, err := adversary.AllButOneAdversary.getsDropped(end, buffer)
+	adversary.Lock()
+	defer adversary.Unlock()
+	if !drop && !adversary.hadLoss {
+		adversary.hadLoss = true
+		return true, err
+	}
+	return drop, err
+}
+
+// This adversary behaves the same as the SimpleAdversary but let's the first wakeUp number of packets through.
+type LazyAdversary struct {
+	SimpleAdversary
+	once    sync.Once
+	counter int
+	wakeUp  int
+}
+
+func (adversary *LazyAdversary) getsDropped(end Endpoint, buffer []byte) (bool, error) {
+	adversary.Lock()
+	adversary.once.Do(func() { adversary.wakeUp = 2 })
+	if adversary.counter < adversary.wakeUp {
+		adversary.counter++
+		adversary.Unlock()
+		return false, nil
+	}
+	adversary.Unlock()
+	return adversary.SimpleAdversary.getsDropped(end, buffer)
+}
+
+// This adversary behaves the same as the AllButOneAdversary but always lets handhshake messages through.
+type AllButOneAdvancedAdversary struct {
+	AllButOneAdversary
+}
+
+func isHandshakeMsgSize(n int) bool {
+	return n == MessageInitiationSize || n == MessageResponseSize || n == MessageCookieReplySize
+}
+
+func (adversary *AllButOneAdvancedAdversary) getsDropped(end Endpoint, buffer []byte) (bool, error) {
+	if isHandshakeMsgSize(len(buffer)) {
+		return false, nil
+	}
+	return adversary.AllButOneAdversary.getsDropped(end, buffer)
 }
