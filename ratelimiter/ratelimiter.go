@@ -13,7 +13,7 @@ import (
 
 const (
 	packetsPerSecond   = 20
-	packetsBurstable   = 5
+	packetsBurstable   = 10
 	garbageCollectTime = time.Second
 	packetCost         = 1000000000 / packetsPerSecond
 	maxTokens          = packetCost * packetsBurstable
