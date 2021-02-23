@@ -396,12 +396,14 @@ func (device *Device) RoutineHandshake() {
 
 			// endpoints destination address is the source of the datagram
 
-			if elem.msgType == MessageInitiationMultType {
-				device.SendHandshakeCookie(&elem)
-				continue
-			}
-
 			if device.IsUnderLoad() {
+
+				// Multipath handshake initiation messages never contain a valid MAC2
+
+				if elem.msgType == MessageInitiationMultType {
+					device.SendHandshakeCookie(&elem)
+					continue
+				}
 
 				// verify MAC2 field
 
@@ -460,6 +462,45 @@ func (device *Device) RoutineHandshake() {
 			atomic.AddUint64(&peer.stats.rxBytes, uint64(len(elem.packet)))
 
 			peer.SendHandshakeResponse()
+
+		case MessageInitiationMultType:
+
+			// shortcut case if valid follower initiation msg of a round
+
+			// unmarshal
+
+			var msg MessageInitiationMult
+			reader := bytes.NewReader(elem.packet)
+			err := binary.Read(reader, binary.LittleEndian, &msg)
+			if err != nil {
+				logError.Println("Failed to decode multipath initiation message")
+				continue
+			}
+
+			// consume initiation
+
+			peer := device.ConsumeMessageInitiation(&msg) /* TODO: need to cutoff fingerprint and cast or better call a mult version that does this */
+			if peer == nil {
+				logInfo.Println(
+					"Received invalid multipath initiation message from",
+					elem.endpoint.DstToString(),
+				)
+				continue
+			}
+
+			// TODO: verify path fingerprint, log
+
+			// update timers
+
+			peer.timersAnyAuthenticatedPacketTraversal()
+			peer.timersAnyAuthenticatedPacketReceived()
+			peer.timersMultipathInitiationMessageReceived()
+
+			// update endpoint
+			peer.SetEndpointFromPacket(elem.endpoint)
+
+			logDebug.Println(peer, "- Received fresh multipath handshake initiation")
+			atomic.AddUint64(&peer.stats.rxBytes, uint64(len(elem.packet)))
 
 		case MessageResponseType:
 

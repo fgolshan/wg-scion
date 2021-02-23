@@ -24,7 +24,8 @@ const (
 	CookieRefreshTime       = time.Second * 120
 	HandshakeInitationRate  = time.Second / 50
 	PaddingMultiple         = 16
-	MaxNoOfPaths            = 10 //Must be smaller equal packetsBurstable in ratelimiter.go
+	MaxNoOfPaths            = 5 //Must be smaller equal packetsBurstable in ratelimiter.go
+	WaitingRoundTime        = time.Second * 1
 )
 
 const (

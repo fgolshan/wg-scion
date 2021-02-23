@@ -53,6 +53,11 @@ type Device struct {
 		keyMap map[NoisePublicKey]*Peer
 	}
 
+	openRounds struct {
+		sync.RWMutex
+		initiationHashes map[string]struct{}
+	}
+
 	// unprotected / "self-synchronising resources"
 
 	allowedips    AllowedIPs
@@ -270,6 +275,8 @@ func NewDevice(tunDevice tun.Device, logger *Logger) *Device {
 	device.tun.mtu = int32(mtu)
 
 	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
+
+	device.openRounds.initiationHashes = make(map[string]struct{})
 
 	device.adversary = new(conn.GhostAdversary)
 	//device.adversary = new(conn.SimpleAdversary)

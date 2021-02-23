@@ -144,6 +144,13 @@ func expiredPersistentKeepalive(peer *Peer) {
 	}
 }
 
+func expiredSendHandshakeResponse(peer *Peer) {
+	//send response
+	//update pathItrIn
+	//clear pathsIn
+	//remove initiation msg from set
+}
+
 /* Should be called after an authenticated data packet is sent. */
 func (peer *Peer) timersDataSent() {
 	if peer.timersActive() && !peer.timers.newHandshake.IsPending() {
@@ -207,15 +214,25 @@ func (peer *Peer) timersAnyAuthenticatedPacketTraversal() {
 	}
 }
 
+/* Should be called after a multipath handshake initiation messages is received. Starts waiting for more initiation messages for WaitingRoundTime */
+func (peer *Peer) timersMultipathInitiationMessageReceived() {
+	if peer.timersActive() && !peer.timers.sendHandshakeResponse.IsPending() {
+		peer.timers.sendHandshakeResponse.Mod(WaitingRoundTime)
+	}
+}
+
 func (peer *Peer) timersInit() {
 	peer.timers.retransmitHandshake = peer.NewTimer(expiredRetransmitHandshake)
 	peer.timers.sendKeepalive = peer.NewTimer(expiredSendKeepalive)
 	peer.timers.newHandshake = peer.NewTimer(expiredNewHandshake)
 	peer.timers.zeroKeyMaterial = peer.NewTimer(expiredZeroKeyMaterial)
 	peer.timers.persistentKeepalive = peer.NewTimer(expiredPersistentKeepalive)
+	peer.timers.sendHandshakeResponse = peer.NewTimer(expiredSendHandshakeResponse)
 	atomic.StoreUint32(&peer.timers.handshakeAttempts, 0)
 	peer.timers.sentLastMinuteHandshake.Set(false)
 	peer.timers.needAnotherKeepalive.Set(false)
+	peer.timers.lastInitiationWasMult.Set(false)
+	peer.timers.gotCookieReply.Set(false)
 }
 
 func (peer *Peer) timersStop() {
@@ -224,4 +241,5 @@ func (peer *Peer) timersStop() {
 	peer.timers.newHandshake.DelSync()
 	peer.timers.zeroKeyMaterial.DelSync()
 	peer.timers.persistentKeepalive.DelSync()
+	peer.timers.sendHadshakeResponse.DelSync()
 }

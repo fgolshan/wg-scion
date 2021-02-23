@@ -48,6 +48,7 @@ type Peer struct {
 		newHandshake            *Timer
 		zeroKeyMaterial         *Timer
 		persistentKeepalive     *Timer
+		sendHandshakeResponse   *Timer
 		handshakeAttempts       uint32
 		needAnotherKeepalive    AtomicBool
 		sentLastMinuteHandshake AtomicBool
@@ -78,8 +79,10 @@ type Peer struct {
 	cookieGenerator CookieGenerator
 
 	paths struct {
-		pathItrOut snet.Path            // remembers the last selected outward path
-		pathsOut   map[string]snet.Path // remembers the paths over which initiation messages were sent
+		pathItrOut snet.Path            // remembers the last selected outward path (used with cookie replies)
+		pathsOut   map[string]snet.Path // remembers the paths over which multipath initiation messages are sent
+		pathItrIn  snet.Path            // remembers the last selected inward path
+		pathsIn    map[string]snet.Path // remembers the paths over which multipath initiation messages were received
 	}
 }
 
