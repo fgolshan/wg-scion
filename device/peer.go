@@ -213,15 +213,15 @@ func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
 	return
 }
 
-func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
+func (peer *Peer) UpdateCurrPathOut(path snet.Path) (bool, error) {
 	fp := conn.Fingerprint(path)
 	if _, ok := peer.paths.pathsOut[fp]; !ok {
-		return nil
+		return false, nil
 	}
 
 	pathCurr, err := peer.endpoint.GetDstPath()
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if func(fpCurr, fpCand string) bool {
@@ -235,9 +235,10 @@ func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
 		return true
 	}(conn.Fingerprint(pathCurr), fp) {
 		peer.endpoint.SetDstPath(path)
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
 func (peer *Peer) UpdatePathItrOut() error {

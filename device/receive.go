@@ -362,7 +362,8 @@ func (device *Device) RoutineHandshake() {
 
 			if peer := entry.peer; peer.isRunning.Get() {
 				logDebug.Println("Receiving cookie response from ", elem.endpoint.DstToString())
-				if !peer.cookieGenerator.ConsumeReply(&reply) {
+				validReply, cookie := peer.cookieGenerator.VerifyReply(&reply)
+				if !validReply {
 					logDebug.Println("Could not decrypt invalid cookie response")
 					continue
 				}
@@ -375,12 +376,20 @@ func (device *Device) RoutineHandshake() {
 						peer.Unlock()
 						continue
 					}
-					errpath = peer.UpdateCurrPathOut(path)
+					updated, errpath := peer.UpdateCurrPathOut(path)
 					if errpath != nil {
 						logDebug.Println("Failed to update path: ", errpath)
+						peer.Unlock()
+						continue
+					}
+					if !updated {
+						peer.Unlock()
+						continue
 					}
 					peer.Unlock()
 				}
+
+				peer.cookieGenerator.ConsumeReply(cookie)
 			}
 
 			continue

@@ -192,26 +192,32 @@ func (st *CookieGenerator) Init(pk NoisePublicKey) {
 	st.mac2.cookieSet = time.Time{}
 }
 
-func (st *CookieGenerator) ConsumeReply(msg *MessageCookieReply) bool {
+func (st *CookieGenerator) VerifyReply(msg *MessageCookieReply) (bool, [blake2s.Size128]byte) {
 	st.Lock()
 	defer st.Unlock()
 
-	if !st.mac2.hasLastMAC1 {
-		return false
-	}
-
 	var cookie [blake2s.Size128]byte
+
+	if !st.mac2.hasLastMAC1 {
+		return false, cookie
+	}
 
 	xchapoly, _ := chacha20poly1305.NewX(st.mac2.encryptionKey[:])
 	_, err := xchapoly.Open(cookie[:0], msg.Nonce[:], msg.Cookie[:], st.mac2.lastMAC1[:])
 
 	if err != nil {
-		return false
+		return false, cookie
 	}
+
+	return true, cookie
+}
+
+func (st *CookieGenerator) ConsumeReply(cookie [blake2s.Size128]byte) {
+	st.Lock()
+	defer st.Unlock()
 
 	st.mac2.cookieSet = time.Now()
 	st.mac2.cookie = cookie
-	return true
 }
 
 func (st *CookieGenerator) AddMacs(msg []byte) {
