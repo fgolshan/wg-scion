@@ -24,6 +24,7 @@ type CookieChecker struct {
 		secret        [blake2s.Size]byte
 		secretSet     time.Time
 		encryptionKey [chacha20poly1305.KeySize]byte
+		secretIsFresh bool
 	}
 }
 
@@ -64,6 +65,15 @@ func (st *CookieChecker) Init(pk NoisePublicKey) {
 	}()
 
 	st.mac2.secretSet = time.Time{}
+	st.mac2.secretIsFresh = false
+}
+
+func (st *CookieChecker) FreshSecretUsed() bool {
+	st.Lock()
+	defer st.Unlock()
+	old := st.mac2.secretIsFresh
+	st.mac2.secretIsFresh = false
+	return old
 }
 
 func (st *CookieChecker) CheckMAC1(msg []byte) bool {
@@ -120,22 +130,23 @@ func (st *CookieChecker) CreateReply(
 	src []byte,
 ) (*MessageCookieReply, error) {
 
-	st.RLock()
+	st.Lock()
 
 	// refresh cookie secret
 
+	fresh := false
 	if time.Since(st.mac2.secretSet) > CookieRefreshTime {
-		st.RUnlock()
-		st.Lock()
 		_, err := rand.Read(st.mac2.secret[:])
 		if err != nil {
 			st.Unlock()
 			return nil, err
 		}
 		st.mac2.secretSet = time.Now()
-		st.Unlock()
-		st.RLock()
+		fresh = true
 	}
+	st.mac2.secretIsFresh = fresh
+	st.Unlock()
+	st.RLock()
 
 	// derive cookie
 
@@ -192,26 +203,32 @@ func (st *CookieGenerator) Init(pk NoisePublicKey) {
 	st.mac2.cookieSet = time.Time{}
 }
 
-func (st *CookieGenerator) ConsumeReply(msg *MessageCookieReply) bool {
+func (st *CookieGenerator) VerifyReply(msg *MessageCookieReply) (bool, [blake2s.Size128]byte) {
 	st.Lock()
 	defer st.Unlock()
 
-	if !st.mac2.hasLastMAC1 {
-		return false
-	}
-
 	var cookie [blake2s.Size128]byte
+
+	if !st.mac2.hasLastMAC1 {
+		return false, cookie
+	}
 
 	xchapoly, _ := chacha20poly1305.NewX(st.mac2.encryptionKey[:])
 	_, err := xchapoly.Open(cookie[:0], msg.Nonce[:], msg.Cookie[:], st.mac2.lastMAC1[:])
 
 	if err != nil {
-		return false
+		return false, cookie
 	}
+
+	return true, cookie
+}
+
+func (st *CookieGenerator) ConsumeReply(cookie [blake2s.Size128]byte) {
+	st.Lock()
+	defer st.Unlock()
 
 	st.mac2.cookieSet = time.Now()
 	st.mac2.cookie = cookie
-	return true
 }
 
 func (st *CookieGenerator) AddMacs(msg []byte) {
