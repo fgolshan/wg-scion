@@ -230,9 +230,10 @@ func (peer *Peer) SendHandshakeInitiation(isRetry, replyMissing bool) error {
 
 	lastInitiationWasMult := peer.timers.lastInitiationWasMult.Get()
 	gotCookieReply := peer.timers.gotCookieReply.Get()
+	freshSecretUsed := peer.device.cookieChecker.FreshSecretUsed()
 
 	if !replyMissing {
-		if !isRetry || (lastInitiationWasMult && gotCookieReply) {
+		if !isRetry || (lastInitiationWasMult && gotCookieReply) || freshSecretUsed {
 			peer.device.log.Debug.Println(peer, "- Sending handshake initiation")
 			peer.timers.lastInitiationWasMult.Set(false)
 			peer.timers.gotCookieReply.Set(false)

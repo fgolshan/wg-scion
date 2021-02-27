@@ -140,7 +140,7 @@ type LazyAdversary struct {
 
 func (adversary *LazyAdversary) getsDropped(end Endpoint, buffer []byte) (bool, error) {
 	adversary.Lock()
-	adversary.once.Do(func() { adversary.wakeUp = 2 })
+	adversary.once.Do(func() { adversary.wakeUp = 3 })
 	if adversary.counter < adversary.wakeUp {
 		adversary.counter++
 		adversary.Unlock()

@@ -129,9 +129,11 @@ func (end *NativeEndpoint) DstIP() net.IP {
 }
 
 func (end *NativeEndpoint) DstToBytes() []byte {
-	ipprt := (*[unsafe.Offsetof(end.dst.Host.Port) + unsafe.Sizeof(end.dst.Host.Port)]byte)(unsafe.Pointer(&end.dst.Host))[:]
-	ia := (*[unsafe.Offsetof(end.dst.IA) + unsafe.Sizeof(end.dst.IA)]byte)(unsafe.Pointer(&end.dst))[:]
-	return append(ia, ipprt...)
+	ip := end.dst.Host.IP
+	ipport := append(ip, (*[unsafe.Sizeof(end.dst.Host.Port)]byte)(unsafe.Pointer(&end.dst.Host.Port))[:]...)
+	ia := (*[unsafe.Sizeof(end.dst.IA)]byte)(unsafe.Pointer(&end.dst.IA))[:]
+	return append(ia, ipport...)
+
 }
 
 func (end *NativeEndpoint) SrcToString() string {
