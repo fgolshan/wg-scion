@@ -6,6 +6,7 @@
 package device
 
 import (
+	"crypto/sha256"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -55,7 +56,7 @@ type Device struct {
 
 	openRounds struct {
 		sync.RWMutex
-		initiationHashes map[string]struct{}
+		initiationHashes map[[sha256.Size]byte]*Peer
 	}
 
 	// unprotected / "self-synchronising resources"
@@ -276,7 +277,7 @@ func NewDevice(tunDevice tun.Device, logger *Logger) *Device {
 
 	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
 
-	device.openRounds.initiationHashes = make(map[string]struct{})
+	device.openRounds.initiationHashes = make(map[[sha256.Size]byte]*Peer)
 
 	device.adversary = new(conn.GhostAdversary)
 	//device.adversary = new(conn.SimpleAdversary)

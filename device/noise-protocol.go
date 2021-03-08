@@ -6,6 +6,7 @@
 package device
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"sync"
@@ -15,6 +16,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/poly1305"
 
+	"golang.zx2c4.com/wireguard/conn"
 	"golang.zx2c4.com/wireguard/tai64n"
 )
 
@@ -69,7 +71,7 @@ const (
 	MessageTransportSize       = MessageTransportHeaderSize + poly1305.TagSize // size of empty transport
 	MessageKeepaliveSize       = MessageTransportSize                          // size of keepalive
 	MessageHandshakeSize       = MessageInitiationSize                         // size of largest handshake related message
-	MessageInitiationMultSize  = MessageInitiationSize                         // size of multipath handshake initiation message
+	MessageInitiationMultSize  = MessageInitiationSize + sha256.Size           // size of multipath handshake initiation message
 )
 
 const (
@@ -94,7 +96,10 @@ type MessageInitiation struct {
 	MAC2      [blake2s.Size128]byte
 }
 
-type MessageInitiationMult MessageInitiation
+type MessageInitiationMult struct {
+	MessageInitiation
+	Fingerprint [sha256.Size]byte
+}
 
 type MessageResponse struct {
 	Type      uint32
@@ -135,6 +140,7 @@ type Handshake struct {
 	lastTimestamp             tai64n.Timestamp
 	lastInitiationConsumption time.Time
 	lastSentHandshake         time.Time
+	fingerprintKey            [chacha20poly1305.KeySize]byte
 }
 
 var (
@@ -248,22 +254,41 @@ func (device *Device) CreateMessageInitiation(peer *Peer) (*MessageInitiation, e
 
 	handshake.mixHash(msg.Timestamp[:])
 	handshake.state = handshakeInitiationCreated
+	handshake.fingerprintKey = key
 	return &msg, nil
 }
 
-func (device *Device) CreateMessageInitiationMult(peer *Peer) (*MessageInitiation, error) {
-	msg, err := peer.device.CreateMessageInitiation(peer)
-	msg.Type = MessageInitiationMultType
-	return msg, err
+func (device *Device) CreateMessageInitiationMult(peer *Peer) (*MessageInitiationMult, error) {
+	var msg MessageInitiationMult
+	m, err := peer.device.CreateMessageInitiation(peer)
+	if err != nil {
+		return nil, err
+	}
+	msg.MessageInitiation = *m
+	msg.MessageInitiation.Type = MessageInitiationMultType
+
+	handshake := &peer.handshake
+	handshake.mutex.Lock()
+	defer handshake.mutex.Unlock()
+
+	path, err := peer.endpoint.GetDstPath()
+	if err != nil {
+		return nil, err
+	}
+	fingerprint := conn.FingerprintRaw(path)
+	aead, _ := chacha20poly1305.New(handshake.fingerprintKey[:])
+	aead.Seal(msg.Fingerprint[:0], ZeroNonce[:], fingerprint[:], handshake.hash[:])
+
+	return &msg, err
 }
 
-func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {
+func (device *Device) ConsumeMessageInitiation(packet []byte, msg *MessageInitiation, isMult bool) *Peer {
 	var (
 		hash     [blake2s.Size]byte
 		chainKey [blake2s.Size]byte
 	)
 
-	if msg.Type != MessageInitiationType {
+	if msg.Type != MessageInitiationType && msg.Type != MessageInitiationType {
 		return nil
 	}
 
@@ -323,11 +348,22 @@ func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {
 	}
 	mixHash(&hash, &hash, msg.Timestamp[:])
 
-	// protect against replay & flood
+	// Only the first core to get here in a multipath handshake needs to update handshake
+
+	handshake.mutex.RUnlock()
+
+	defer setZero(hash[:])
+	defer setZero(chainKey[:])
+
+	handshake.mutex.Lock()
+	if peer.timers.sendHandshakeResponse.IsPending() {
+		return peer
+	}
+
+	// protect against replay & flood (relevant for single path handshake only)
 
 	replay := !timestamp.After(handshake.lastTimestamp)
 	flood := time.Since(handshake.lastInitiationConsumption) <= HandshakeInitationRate
-	handshake.mutex.RUnlock()
 	if replay {
 		device.log.Debug.Printf("%v - ConsumeMessageInitiation: handshake replay @ %v\n", peer, timestamp)
 		return nil
@@ -339,10 +375,9 @@ func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {
 
 	// update handshake state
 
-	handshake.mutex.Lock()
-
 	handshake.hash = hash
 	handshake.chainKey = chainKey
+	handshake.fingerprintKey = key
 	handshake.remoteIndex = msg.Sender
 	handshake.remoteEphemeral = msg.Ephemeral
 	if timestamp.After(handshake.lastTimestamp) {
@@ -354,10 +389,42 @@ func (device *Device) ConsumeMessageInitiation(msg *MessageInitiation) *Peer {
 	}
 	handshake.state = handshakeInitiationConsumed
 
+	if isMult {
+		peer.timersMultipathInitiationMessageReceived()
+		device.AddNewRound(packet, peer)
+	}
+
 	handshake.mutex.Unlock()
 
-	setZero(hash[:])
-	setZero(chainKey[:])
+	return peer
+}
+
+func (peer *Peer) PathFingerprintIsValid(msg *MessageInitiationMult, end conn.Endpoint) bool {
+	handshake := &peer.handshake
+	handshake.mutex.RLock()
+	defer handshake.mutex.RUnlock()
+
+	var fp [sha256.Size]byte
+	aead, _ := chacha20poly1305.New(handshake.fingerprintKey[:])
+	_, err := aead.Open(fp[:0], ZeroNonce[:], msg.Fingerprint[:], handshake.hash[:])
+	if err != nil {
+		return false
+	}
+
+	// May also want to compare fp to the fingerprint of the reverse path of the endpoint in the future
+
+	return true
+}
+
+func (device *Device) ConsumeMessageInitiationMult(packet []byte, msg *MessageInitiationMult, end conn.Endpoint) *Peer {
+	peer := device.ConsumeMessageInitiation(packet, &msg.MessageInitiation, true)
+	if peer == nil {
+		return nil
+	}
+
+	if !peer.PathFingerprintIsValid(msg, end) {
+		return nil
+	}
 
 	return peer
 }
@@ -564,6 +631,7 @@ func (peer *Peer) BeginSymmetricSession() error {
 	setZero(handshake.chainKey[:])
 	setZero(handshake.hash[:]) // Doesn't necessarily need to be zeroed. Could be used for something interesting down the line.
 	setZero(handshake.localEphemeral[:])
+	setZero(handshake.fingerprintKey[:])
 	peer.handshake.state = handshakeZeroed
 
 	// create AEAD instances

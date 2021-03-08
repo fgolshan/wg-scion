@@ -145,10 +145,12 @@ func expiredPersistentKeepalive(peer *Peer) {
 }
 
 func expiredSendHandshakeResponse(peer *Peer) {
-	//send response
-	//update pathItrIn
-	//clear pathsIn
-	//remove initiation msg from set
+	peer.Lock()
+	peer.UpdatePathItrIn()
+	peer.ClearPathsIn()
+	peer.Unlock()
+	peer.device.RemoveRound(peer)
+	peer.SendHandshakeResponse()
 }
 
 /* Should be called after an authenticated data packet is sent. */
@@ -241,5 +243,5 @@ func (peer *Peer) timersStop() {
 	peer.timers.newHandshake.DelSync()
 	peer.timers.zeroKeyMaterial.DelSync()
 	peer.timers.persistentKeepalive.DelSync()
-	peer.timers.sendHadshakeResponse.DelSync()
+	peer.timers.sendHandshakeResponse.DelSync()
 }

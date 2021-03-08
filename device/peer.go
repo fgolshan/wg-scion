@@ -115,6 +115,7 @@ func (device *Device) NewPeer(pk NoisePublicKey) (*Peer, error) {
 	peer.device = device
 	peer.isRunning.Set(false)
 	peer.paths.pathsOut = make(map[string]snet.Path)
+	peer.paths.pathsIn = make(map[string]snet.Path)
 
 	// map public key
 
@@ -216,51 +217,44 @@ func (peer *Peer) UpdatePathsOut(paths []snet.Path) {
 	return
 }
 
-func (peer *Peer) UpdateCurrPathOut(path snet.Path) error {
+func (peer *Peer) ClearPathsIn() {
+	peer.paths.pathsIn = make(map[string]snet.Path)
+}
+
+func needPathUpdate(fpCurr, fpCand, fpIter string) bool {
+	if fpIter < fpCurr {
+		return fpCand > fpIter && fpCand < fpCurr
+	}
+	if fpIter > fpCurr {
+		return fpCand > fpIter || fpCand < fpCurr
+	}
+	return true
+}
+
+func (peer *Peer) UpdateCurrPathOut(path snet.Path) (bool, error) {
 	fp := conn.Fingerprint(path)
 	if _, ok := peer.paths.pathsOut[fp]; !ok {
-		return nil
+		return false, nil
 	}
 
 	pathCurr, err := peer.endpoint.GetDstPath()
 	if err != nil {
-		return err
+		return false, err
 	}
 
-	if func(fpCurr, fpCand string) bool {
-		fpIter := conn.Fingerprint(peer.paths.pathItrOut)
-		if fpIter < fpCurr {
-			return fpCand > fpIter && fpCand < fpCurr
-		}
-		if fpIter > fpCurr {
-			return fpCand > fpIter || fpCand < fpCurr
-		}
-		return true
-	}(conn.Fingerprint(pathCurr), fp) {
+	if needPathUpdate(conn.Fingerprint(pathCurr), fp, conn.Fingerprint(peer.paths.pathItrOut)) {
 		peer.endpoint.SetDstPath(path)
+		return true, nil
 	}
 
-	return nil
+	return false, nil
 }
 
-func (peer *Peer) UpdatePathItrOut() error {
-	if peer.paths.pathItrOut == nil {
-		paths, err := peer.endpoint.GetDstPaths()
-		if err != nil || len(paths) == 0 {
-			return err
-		}
-		peer.paths.pathItrOut = paths[0]
-		return nil
-	}
+func getNextPath(pathItr snet.Path, paths map[string]snet.Path) snet.Path {
 
-	paths := peer.paths.pathsOut
-	if len(paths) == 0 {
-		return errors.New("Can't update path iterator with no paths available")
-	}
+	// since MaxNoOfPaths is a reasonable constant, this is good enough for the moment
 
-	// since MaxNoOfPaths is a reasonable constant, this is good enough
-
-	itrFp := conn.Fingerprint(peer.paths.pathItrOut)
+	itrFp := conn.Fingerprint(pathItr)
 	var cand snet.Path
 	var candFp string
 	minFp, min := func(ps map[string]snet.Path) (string, snet.Path) {
@@ -284,11 +278,42 @@ func (peer *Peer) UpdatePathItrOut() error {
 	}
 
 	if candFp == "" {
-		peer.paths.pathItrOut = min
+		return min
+	}
+	return cand
+}
+
+func (peer *Peer) UpdatePathItrOut() error {
+	if peer.paths.pathItrOut == nil {
+		paths, err := peer.endpoint.GetDstPaths()
+		if err != nil || len(paths) == 0 {
+			return err
+		}
+		peer.paths.pathItrOut = paths[0]
 		return nil
 	}
-	peer.paths.pathItrOut = cand
+
+	paths := peer.paths.pathsOut
+	if len(paths) == 0 {
+		return errors.New("Can't update path iterator with no paths available")
+	}
+
+	peer.paths.pathItrOut = getNextPath(peer.paths.pathItrOut, paths)
 	return nil
+}
+
+func (peer *Peer) UpdatePathItrIn() {
+	if peer.paths.pathItrIn == nil {
+		return
+	}
+
+	paths := peer.paths.pathsIn
+	if len(paths) == 0 {
+		return
+	}
+
+	peer.paths.pathItrIn = getNextPath(peer.paths.pathItrIn, paths)
+	return
 }
 
 func (peer *Peer) String() string {
@@ -435,4 +460,54 @@ func (peer *Peer) SetEndpointFromPacket(endpoint conn.Endpoint) {
 	peer.Lock()
 	peer.endpoint = endpoint
 	peer.Unlock()
+}
+
+func (peer *Peer) SetEndpointFromPacketMult(endpoint conn.Endpoint) {
+	peer.Lock()
+	defer peer.Unlock()
+
+	if len(peer.paths.pathsIn) >= MaxNoOfPaths {
+		return
+	}
+
+	candidatePath, err := endpoint.GetDstPath()
+	if err != nil {
+		return
+	}
+	candidateFp := conn.Fingerprint(candidatePath)
+	if _, ok := peer.paths.pathsIn[candidateFp]; ok {
+		return
+	}
+
+	currentPath, err := peer.endpoint.GetDstPath()
+	if err != nil {
+		return
+	}
+	currentFp := conn.Fingerprint(candidatePath)
+
+	if currentPath == nil {
+		if peer.disableRoaming {
+			return
+		}
+		peer.paths.pathsIn[candidateFp] = candidatePath
+		peer.paths.pathItrIn = candidatePath
+		peer.endpoint = endpoint
+		return
+	}
+
+	if peer.paths.pathItrIn == nil {
+		peer.paths.pathItrIn = currentPath
+	}
+
+	if needPathUpdate(currentFp, candidateFp, conn.Fingerprint(peer.paths.pathItrOut)) {
+		if peer.disableRoaming {
+			peer.endpoint.SetDstPath(candidatePath)
+		} else {
+			peer.endpoint = endpoint
+		}
+	}
+
+	peer.paths.pathsIn[candidateFp] = candidatePath
+
+	return
 }

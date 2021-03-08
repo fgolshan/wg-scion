@@ -7,6 +7,7 @@ package device
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"net"
 	"sync"
@@ -296,6 +297,30 @@ func (device *Device) RoutineDecryption() {
 	}
 }
 
+func (device *Device) AddNewRound(packet []byte, peer *Peer) {
+	device.openRounds.Lock()
+	device.openRounds.initiationHashes[sha256.Sum256(packet)] = peer
+	device.openRounds.Unlock()
+}
+
+func (device *Device) PacketBelongsToRound(packet []byte) (*Peer, bool) {
+	device.openRounds.Lock()
+	p, ok := device.openRounds.initiationHashes[sha256.Sum256(packet)]
+	device.openRounds.Unlock()
+	return p, ok
+}
+
+// Here is room for optimization
+func (device *Device) RemoveRound(peer *Peer) {
+	device.openRounds.Lock()
+	for h, p := range device.openRounds.initiationHashes {
+		if p == peer {
+			delete(device.openRounds.initiationHashes, h)
+		}
+	}
+	device.openRounds.Unlock()
+}
+
 /* Handles incoming packets related to handshake
  */
 func (device *Device) RoutineHandshake() {
@@ -362,7 +387,8 @@ func (device *Device) RoutineHandshake() {
 
 			if peer := entry.peer; peer.isRunning.Get() {
 				logDebug.Println("Receiving cookie response from ", elem.endpoint.DstToString())
-				if !peer.cookieGenerator.ConsumeReply(&reply) {
+				validReply, cookie := peer.cookieGenerator.VerifyReply(&reply)
+				if !validReply {
 					logDebug.Println("Could not decrypt invalid cookie response")
 					continue
 				}
@@ -375,12 +401,20 @@ func (device *Device) RoutineHandshake() {
 						peer.Unlock()
 						continue
 					}
-					errpath = peer.UpdateCurrPathOut(path)
+					updated, errpath := peer.UpdateCurrPathOut(path)
 					if errpath != nil {
 						logDebug.Println("Failed to update path: ", errpath)
+						peer.Unlock()
+						continue
+					}
+					if !updated {
+						peer.Unlock()
+						continue
 					}
 					peer.Unlock()
 				}
+
+				peer.cookieGenerator.ConsumeReply(cookie)
 			}
 
 			continue
@@ -389,7 +423,7 @@ func (device *Device) RoutineHandshake() {
 
 			// check mac fields and maybe ratelimit
 
-			if !device.cookieChecker.CheckMAC1(elem.packet) {
+			if !device.cookieChecker.CheckMAC1(elem.packet, elem.msgType == MessageInitiationMultType) {
 				logDebug.Println("Received packet with invalid mac1")
 				continue
 			}
@@ -401,14 +435,14 @@ func (device *Device) RoutineHandshake() {
 				// Multipath handshake initiation messages never contain a valid MAC2
 
 				if elem.msgType == MessageInitiationMultType {
-					device.SendHandshakeCookie(&elem)
+					device.SendHandshakeCookie(&elem, true)
 					continue
 				}
 
 				// verify MAC2 field
 
 				if !device.cookieChecker.CheckMAC2(elem.packet, elem.endpoint.DstToBytes()) {
-					device.SendHandshakeCookie(&elem)
+					device.SendHandshakeCookie(&elem, false)
 					continue
 				}
 
@@ -441,7 +475,7 @@ func (device *Device) RoutineHandshake() {
 
 			// consume initiation
 
-			peer := device.ConsumeMessageInitiation(&msg)
+			peer := device.ConsumeMessageInitiation(elem.packet, &msg, false)
 			if peer == nil {
 				logInfo.Println(
 					"Received invalid initiation message from",
@@ -465,8 +499,6 @@ func (device *Device) RoutineHandshake() {
 
 		case MessageInitiationMultType:
 
-			// shortcut case if valid follower initiation msg of a round
-
 			// unmarshal
 
 			var msg MessageInitiationMult
@@ -479,7 +511,20 @@ func (device *Device) RoutineHandshake() {
 
 			// consume initiation
 
-			peer := device.ConsumeMessageInitiation(&msg) /* TODO: need to cutoff fingerprint and cast or better call a mult version that does this */
+			var peer *Peer
+			if p, ok := device.PacketBelongsToRound(elem.packet); ok {
+				peer = p
+				if !peer.PathFingerprintIsValid(&msg, elem.endpoint) {
+					logInfo.Println(
+						"Received invalid multipath initiation message from",
+						elem.endpoint.DstToString(),
+					)
+					continue
+				}
+			} else {
+				peer = device.ConsumeMessageInitiationMult(elem.packet, &msg, elem.endpoint)
+			}
+
 			if peer == nil {
 				logInfo.Println(
 					"Received invalid multipath initiation message from",
@@ -488,18 +533,15 @@ func (device *Device) RoutineHandshake() {
 				continue
 			}
 
-			// TODO: verify path fingerprint, log
-
-			// update timers
+			// update timers (MultipathInitiationMessageReceived timer is set in ConsumeMessageInitiationMult)
 
 			peer.timersAnyAuthenticatedPacketTraversal()
 			peer.timersAnyAuthenticatedPacketReceived()
-			peer.timersMultipathInitiationMessageReceived()
 
 			// update endpoint
-			peer.SetEndpointFromPacket(elem.endpoint)
+			peer.SetEndpointFromPacketMult(elem.endpoint)
 
-			logDebug.Println(peer, "- Received fresh multipath handshake initiation")
+			logDebug.Println(peer, "- Received multipath handshake initiation")
 			atomic.AddUint64(&peer.stats.rxBytes, uint64(len(elem.packet)))
 
 		case MessageResponseType:

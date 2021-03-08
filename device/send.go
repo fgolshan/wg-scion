@@ -146,7 +146,7 @@ func (peer *Peer) sendHandshakeInitiationSingle() error {
 	writer := bytes.NewBuffer(buff[:0])
 	binary.Write(writer, binary.LittleEndian, msg)
 	packet := writer.Bytes()
-	peer.cookieGenerator.AddMacs(packet)
+	peer.cookieGenerator.AddMacs(packet, false)
 
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
@@ -168,11 +168,11 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 		return err
 	}
 
-	var buff [MessageInitiationSize]byte
+	var buff [MessageInitiationMultSize]byte
 	writer := bytes.NewBuffer(buff[:0])
 	binary.Write(writer, binary.LittleEndian, msg)
 	packet := writer.Bytes()
-	peer.cookieGenerator.AddMacs(packet)
+	peer.cookieGenerator.AddMacs(packet, true)
 
 	peer.timersAnyAuthenticatedPacketTraversal()
 	peer.timersAnyAuthenticatedPacketSent()
@@ -200,7 +200,7 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 
 	err = peer.SendBufferMult(packet)
 	if err != nil {
-		peer.device.log.Error.Println(peer, "-Fariled to send multipath handshake initiation", err)
+		peer.device.log.Error.Println(peer, "-Failed to send multipath handshake initiation", err)
 	}
 
 	peer.timersHandshakeInitiated()
@@ -230,9 +230,10 @@ func (peer *Peer) SendHandshakeInitiation(isRetry, replyMissing bool) error {
 
 	lastInitiationWasMult := peer.timers.lastInitiationWasMult.Get()
 	gotCookieReply := peer.timers.gotCookieReply.Get()
+	freshSecretUsed := peer.device.cookieChecker.FreshSecretUsed()
 
 	if !replyMissing {
-		if !isRetry || (lastInitiationWasMult && gotCookieReply) {
+		if !isRetry || (lastInitiationWasMult && gotCookieReply) || freshSecretUsed {
 			peer.device.log.Debug.Println(peer, "- Sending handshake initiation")
 			peer.timers.lastInitiationWasMult.Set(false)
 			peer.timers.gotCookieReply.Set(false)
@@ -263,7 +264,7 @@ func (peer *Peer) SendHandshakeResponse() error {
 	writer := bytes.NewBuffer(buff[:0])
 	binary.Write(writer, binary.LittleEndian, response)
 	packet := writer.Bytes()
-	peer.cookieGenerator.AddMacs(packet)
+	peer.cookieGenerator.AddMacs(packet, false)
 
 	err = peer.BeginSymmetricSession()
 	if err != nil {
@@ -282,12 +283,12 @@ func (peer *Peer) SendHandshakeResponse() error {
 	return err
 }
 
-func (device *Device) SendHandshakeCookie(initiatingElem *QueueHandshakeElement) error {
+func (device *Device) SendHandshakeCookie(initiatingElem *QueueHandshakeElement, isMult bool) error {
 
 	device.log.Debug.Println("Sending cookie response for denied handshake message for", initiatingElem.endpoint.DstToString())
 
 	sender := binary.LittleEndian.Uint32(initiatingElem.packet[4:8])
-	reply, err := device.cookieChecker.CreateReply(initiatingElem.packet, sender, initiatingElem.endpoint.DstToBytes())
+	reply, err := device.cookieChecker.CreateReply(initiatingElem.packet, sender, initiatingElem.endpoint.DstToBytes(), isMult)
 	if err != nil {
 		device.log.Error.Println("Failed to create cookie reply:", err)
 		return err
