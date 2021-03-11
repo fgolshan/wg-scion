@@ -518,6 +518,7 @@ func (device *Device) RoutineHandshake() {
 					logInfo.Println(
 						"Received invalid multipath initiation message from",
 						elem.endpoint.DstToString(),
+						". Path fingerprint is invalid.",
 					)
 					continue
 				}

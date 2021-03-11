@@ -71,13 +71,17 @@ const (
 	MessageTransportSize       = MessageTransportHeaderSize + poly1305.TagSize // size of empty transport
 	MessageKeepaliveSize       = MessageTransportSize                          // size of keepalive
 	MessageHandshakeSize       = MessageInitiationSize                         // size of largest handshake related message
-	MessageInitiationMultSize  = MessageInitiationSize + sha256.Size           // size of multipath handshake initiation message
+	MessageInitiationMultSize  = MessageInitiationSize + SealedFingerprintSize // size of multipath handshake initiation message
 )
 
 const (
 	MessageTransportOffsetReceiver = 4
 	MessageTransportOffsetCounter  = 8
 	MessageTransportOffsetContent  = 16
+)
+
+const (
+	SealedFingerprintSize = sha256.Size + poly1305.TagSize
 )
 
 /* Type is an 8-bit field, followed by 3 nul bytes,
@@ -98,7 +102,7 @@ type MessageInitiation struct {
 
 type MessageInitiationMult struct {
 	MessageInitiation
-	Fingerprint [sha256.Size]byte
+	Fingerprint [SealedFingerprintSize]byte
 }
 
 type MessageResponse struct {
@@ -288,7 +292,7 @@ func (device *Device) ConsumeMessageInitiation(packet []byte, msg *MessageInitia
 		chainKey [blake2s.Size]byte
 	)
 
-	if msg.Type != MessageInitiationType && msg.Type != MessageInitiationType {
+	if msg.Type != MessageInitiationType && msg.Type != MessageInitiationMultType {
 		return nil
 	}
 
@@ -356,6 +360,7 @@ func (device *Device) ConsumeMessageInitiation(packet []byte, msg *MessageInitia
 	defer setZero(chainKey[:])
 
 	handshake.mutex.Lock()
+	defer handshake.mutex.Unlock()
 	if peer.timers.sendHandshakeResponse.IsPending() {
 		return peer
 	}
@@ -394,8 +399,6 @@ func (device *Device) ConsumeMessageInitiation(packet []byte, msg *MessageInitia
 		device.AddNewRound(packet, peer)
 	}
 
-	handshake.mutex.Unlock()
-
 	return peer
 }
 
@@ -404,7 +407,7 @@ func (peer *Peer) PathFingerprintIsValid(msg *MessageInitiationMult, end conn.En
 	handshake.mutex.RLock()
 	defer handshake.mutex.RUnlock()
 
-	var fp [sha256.Size]byte
+	var fp [SealedFingerprintSize]byte
 	aead, _ := chacha20poly1305.New(handshake.fingerprintKey[:])
 	_, err := aead.Open(fp[:0], ZeroNonce[:], msg.Fingerprint[:], handshake.hash[:])
 	if err != nil {
@@ -417,7 +420,8 @@ func (peer *Peer) PathFingerprintIsValid(msg *MessageInitiationMult, end conn.En
 }
 
 func (device *Device) ConsumeMessageInitiationMult(packet []byte, msg *MessageInitiationMult, end conn.Endpoint) *Peer {
-	peer := device.ConsumeMessageInitiation(packet, &msg.MessageInitiation, true)
+	sizeWithoutFp := len(packet) - SealedFingerprintSize
+	peer := device.ConsumeMessageInitiation(packet[:sizeWithoutFp], &msg.MessageInitiation, true)
 	if peer == nil {
 		return nil
 	}

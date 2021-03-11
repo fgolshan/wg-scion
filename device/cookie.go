@@ -8,7 +8,6 @@ package device
 import (
 	"crypto/hmac"
 	"crypto/rand"
-	"crypto/sha256"
 	"sync"
 	"time"
 
@@ -83,7 +82,7 @@ func (st *CookieChecker) CheckMAC1(msg []byte, isMult bool) bool {
 
 	size := len(msg)
 	if isMult {
-		size = size - sha256.Size
+		size = size - SealedFingerprintSize
 	}
 	smac2 := size - blake2s.Size128
 	smac1 := smac2 - blake2s.Size128
@@ -166,7 +165,7 @@ func (st *CookieChecker) CreateReply(
 
 	size := len(msg)
 	if isMult {
-		size = size - sha256.Size
+		size = size - SealedFingerprintSize
 	}
 
 	smac2 := size - blake2s.Size128
@@ -243,7 +242,7 @@ func (st *CookieGenerator) AddMacs(msg []byte, isMult bool) {
 
 	size := len(msg)
 	if isMult {
-		size = size - sha256.Size
+		size = size - SealedFingerprintSize
 	}
 
 	smac2 := size - blake2s.Size128

@@ -479,21 +479,25 @@ func (peer *Peer) SetEndpointFromPacketMult(endpoint conn.Endpoint) {
 		return
 	}
 
-	currentPath, err := peer.endpoint.GetDstPath()
-	if err != nil {
-		return
-	}
-	currentFp := conn.Fingerprint(candidatePath)
-
-	if currentPath == nil {
-		if peer.disableRoaming {
-			return
-		}
+	if peer.endpoint == nil {
 		peer.paths.pathsIn[candidateFp] = candidatePath
 		peer.paths.pathItrIn = candidatePath
 		peer.endpoint = endpoint
 		return
 	}
+
+	currentPath, err := peer.endpoint.GetDstPath()
+	if currentPath == nil {
+		peer.paths.pathsIn[candidateFp] = candidatePath
+		peer.paths.pathItrIn = candidatePath
+		if peer.disableRoaming {
+			peer.endpoint.SetDstPath(candidatePath)
+		} else {
+			peer.endpoint = endpoint
+		}
+		return
+	}
+	currentFp := conn.Fingerprint(candidatePath)
 
 	if peer.paths.pathItrIn == nil {
 		peer.paths.pathItrIn = currentPath

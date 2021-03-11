@@ -76,11 +76,21 @@ func Fingerprint(path snet.Path) string {
 
 func (bind *nativeBind) ReceiveIP(buff []byte) (int, Endpoint, error) {
 	var end NativeEndpoint
-	size, newDst, err := bind.scionconn.ReadFrom(buff)
-	if err != nil {
-		fmt.Println("Could not read from scion connection, got err: ", err)
-		return 0, nil, err
+	var size int
+	var newDst net.Addr
+	var err error
+
+	for {
+		size, newDst, err = bind.scionconn.ReadFrom(buff)
+		if err != nil {
+			if _, ok := err.(*snet.OpError); ok {
+				continue
+			}
+			return 0, nil, err
+		}
+		break
 	}
+
 	if newDstUDP, ok := newDst.(*snet.UDPAddr); ok {
 		end.dst = *newDstUDP
 		path, _ := end.dst.GetPath()
