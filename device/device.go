@@ -271,12 +271,13 @@ func NewDevice(tunDevice tun.Device, logger *Logger) *Device {
 
 	device.peers.keyMap = make(map[NoisePublicKey]*Peer)
 
-	device.adversary = new(conn.GhostAdversary)
+	//device.adversary = new(conn.GhostAdversary)
 	//device.adversary = new(conn.SimpleAdversary)
 	//device.adversary = new(conn.AllButOneAdversary)
 	//device.adversary = new(conn.AllButOneLossyAdversary)
 	//device.adversary = new(conn.LazyAdversary)
-	//device.adversary = new(conn.AllButOneAdvancedAdversary)
+	device.adversary = new(conn.AllButOneAdvancedAdversary)
+	device.adversary.Init()
 
 	device.rate.limiter.Init()
 	device.rate.underLoadUntil.Store(time.Time{})

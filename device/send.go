@@ -168,7 +168,7 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 		return err
 	}
 
-	var buff [MessageInitiationSize]byte
+	var buff [MessageInitiationMultSize]byte
 	writer := bytes.NewBuffer(buff[:0])
 	binary.Write(writer, binary.LittleEndian, msg)
 	packet := writer.Bytes()
@@ -187,7 +187,10 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 	}
 
 	peer.UpdatePathsOut(paths)
-	peer.device.adversary.UpdatePaths(peer.paths.pathsOut)
+	erradv := peer.device.adversary.UpdatePaths(peer.endpoint, peer.paths.pathsOut)
+	if erradv != nil {
+		peer.device.log.Error.Println("Adversary failed to update paths", erradv)
+	}
 	err = peer.UpdatePathItrOut()
 	peer.endpoint.SetDstPath(peer.paths.pathItrOut)
 
