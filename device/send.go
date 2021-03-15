@@ -168,7 +168,7 @@ func (peer *Peer) sendHandshakeInitiationMult() error {
 		return err
 	}
 
-	var buff [MessageInitiationSize]byte
+	var buff [MessageInitiationMultSize]byte
 	writer := bytes.NewBuffer(buff[:0])
 	binary.Write(writer, binary.LittleEndian, msg)
 	packet := writer.Bytes()
