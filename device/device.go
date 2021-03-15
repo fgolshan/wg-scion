@@ -285,6 +285,7 @@ func NewDevice(tunDevice tun.Device, logger *Logger) *Device {
 	//device.adversary = new(conn.AllButOneLossyAdversary)
 	//device.adversary = new(conn.LazyAdversary)
 	//device.adversary = new(conn.AllButOneAdvancedAdversary)
+	device.adversary.Init()
 
 	device.rate.limiter.Init()
 	device.rate.underLoadUntil.Store(time.Time{})

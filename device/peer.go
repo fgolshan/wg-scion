@@ -497,13 +497,13 @@ func (peer *Peer) SetEndpointFromPacketMult(endpoint conn.Endpoint) {
 		}
 		return
 	}
-	currentFp := conn.Fingerprint(candidatePath)
+	currentFp := conn.Fingerprint(currentPath)
 
 	if peer.paths.pathItrIn == nil {
 		peer.paths.pathItrIn = currentPath
 	}
 
-	if needPathUpdate(currentFp, candidateFp, conn.Fingerprint(peer.paths.pathItrOut)) {
+	if needPathUpdate(currentFp, candidateFp, conn.Fingerprint(peer.paths.pathItrIn)) {
 		if peer.disableRoaming {
 			peer.endpoint.SetDstPath(candidatePath)
 		} else {
