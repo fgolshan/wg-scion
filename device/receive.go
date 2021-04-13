@@ -568,6 +568,9 @@ func (device *Device) RoutineHandshake() {
 				continue
 			}
 
+			// stop accepting endpoint updates from cookie replies
+			peer.timers.lastInitiationWasMult.Set(false)
+
 			// update endpoint
 			peer.SetEndpointFromPacket(elem.endpoint)
 
